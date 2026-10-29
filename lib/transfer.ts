@@ -133,6 +133,7 @@ export function parseRules(text: string, options: ImportOptions): Rule[] {
       kind: options.target as RuleKind,
       key: input.key ?? input.name,
       value: input.value,
+      ...(input.values !== undefined ? { values: input.values } : {}),
       enabled: input.enabled ?? true,
       scope: input.scope ?? options.scope,
       pattern: input.pattern ?? options.pattern,

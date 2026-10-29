@@ -81,6 +81,33 @@ const form = reactive<Rule>({
   includeSubdomains: true,
   operation: "set",
 });
+const valueDrafts = ref<string[]>([""]);
+const selectedValueIndex = ref(0);
+async function addValue() {
+  if (busy.value || valueDrafts.value.length >= 30) return;
+  valueDrafts.value.push("");
+  await nextTick();
+  const input = document.getElementById(
+    `rule-value-${valueDrafts.value.length - 1}`,
+  );
+  input?.focus({ preventScroll: true });
+  input?.scrollIntoView({ block: "nearest", behavior: "instant" });
+}
+function removeValue(index: number) {
+  if (valueDrafts.value.length === 1) return;
+  valueDrafts.value.splice(index, 1);
+  if (selectedValueIndex.value === index) selectedValueIndex.value = 0;
+  else if (selectedValueIndex.value > index) selectedValueIndex.value--;
+}
+function valueOptions(rule: Rule) {
+  return (rule.values || [rule.value]).map((value, index) => ({
+    value,
+    label:
+      isSensitive(rule) && !revealed.has(rule.id)
+        ? `候选值 ${index + 1} · ••••••••`
+        : value || "（空值）",
+  }));
+}
 const cookieForm = reactive<CookieInput>({
   name: "",
   value: "",
@@ -129,7 +156,7 @@ const filteredRules = computed(() =>
     (r) =>
       (scopeFilter.value !== "current" ||
         (context.value && matchesRule(r, context.value.url))) &&
-      `${r.key} ${r.value} ${r.pattern}`
+      `${r.key} ${r.value} ${(r.values || []).join(" ")} ${r.pattern}`
         .toLowerCase()
         .includes(query.value.toLowerCase()),
   ),
@@ -308,6 +335,13 @@ function openRule(rule?: Rule) {
           operation: "set",
         },
   );
+  // Reset optional fields as Object.assign does not remove fields from the previous editor.
+  form.values = rule?.values ? [...rule.values] : undefined;
+  valueDrafts.value = rule?.values ? [...rule.values] : [rule?.value ?? ""];
+  selectedValueIndex.value = Math.max(
+    0,
+    valueDrafts.value.indexOf(rule?.value ?? ""),
+  );
   editor.value = "rule";
   editorError.value = "";
   advanced.value = false;
@@ -353,7 +387,18 @@ function closeEditor() {
 async function save() {
   await run(async () => {
     if (editor.value === "rule") {
-      const value = validateRule({ ...form });
+      const value = validateRule({
+        ...form,
+        ...(form.kind === "header"
+          ? {
+              value: valueDrafts.value[selectedValueIndex.value] ?? "",
+              values:
+                valueDrafts.value.length > 1
+                  ? [...valueDrafts.value]
+                  : undefined,
+            }
+          : { values: undefined }),
+      });
       state.value = await request<State>("SAVE_RULE", value);
       flash(
         state.value.config.enabled && value.enabled
@@ -383,6 +428,20 @@ async function toggleAll() {
       state.value.config.enabled
         ? "请求注入已开启"
         : "请求注入已暂停，网站 Cookie 保留",
+    );
+  });
+}
+async function changeRuleValue(rule: Rule, value: string) {
+  await run(async () => {
+    state.value = await request<State>("SELECT_RULE_VALUE", {
+      id: rule.id,
+      environmentId: state.value.config.activeEnvironmentId,
+      value,
+    });
+    flash(
+      state.value.config.enabled && rule.enabled
+        ? `${rule.key} 已切换，后续匹配请求将使用新值`
+        : `${rule.key} 的值已保存，当前未开启注入`,
     );
   });
 }
@@ -709,22 +768,44 @@ onUnmounted(() => {
                 ><span
               /></span>
             </button>
-            <button
-              class="rule-content"
-              :aria-label="`编辑 ${rule.key}`"
-              @click="openRule(rule)"
-            >
-              <span class="rule-name"
-                >{{ rule.key
-                }}<span v-if="rule.kind === 'cookie'" class="operation-label">{{
-                  rule.operation === "set" ? "替换整段" : "追加"
-                }}</span></span
-              ><span class="rule-value">{{
-                isSensitive(rule) && !revealed.has(rule.id)
-                  ? "••••••••••••••••••••"
-                  : rule.value || "（空值）"
-              }}</span
-              ><span class="rule-scope"
+            <div class="rule-content">
+              <button
+                class="rule-details"
+                :aria-label="`编辑 ${rule.key}`"
+                @click="openRule(rule)"
+              >
+                <span class="rule-name"
+                  >{{ rule.key
+                  }}<span
+                    v-if="rule.kind === 'cookie'"
+                    class="operation-label"
+                    >{{ rule.operation === "set" ? "替换整段" : "追加" }}</span
+                  ></span
+                >
+                <span
+                  v-if="!rule.values || rule.values.length < 2"
+                  class="rule-value"
+                  >{{
+                    isSensitive(rule) && !revealed.has(rule.id)
+                      ? "••••••••••••••••••••"
+                      : rule.value || "（空值）"
+                  }}</span
+                >
+              </button>
+              <UiSelect
+                v-if="
+                  rule.kind === 'header' &&
+                  rule.values &&
+                  rule.values.length > 1
+                "
+                class="rule-value-picker"
+                :model-value="rule.value"
+                :options="valueOptions(rule)"
+                :label="`切换 ${rule.key} 的值`"
+                :disabled="busy"
+                @update:model-value="changeRuleValue(rule, $event)"
+              />
+              <span class="rule-scope"
                 ><Globe2 :size="12" /><span :title="scopeName(rule)">{{
                   scopeName(rule)
                 }}</span
@@ -740,7 +821,7 @@ onUnmounted(() => {
                   >当前匹配</span
                 ></span
               >
-            </button>
+            </div>
             <div class="row-actions">
               <button
                 class="icon-button"
@@ -995,21 +1076,76 @@ onUnmounted(() => {
                 required
               />
             </div>
-            <div class="field">
-              <label for="rule-value"
-                >{{ form.kind === "header" ? "Header 值" : "Cookie 内容"
-                }}<span v-if="form.kind === 'header'" class="optional"
-                  >允许空值</span
-                ></label
+            <div v-if="form.kind === 'header'" class="field header-values">
+              <div class="values-heading">
+                <label for="rule-value"
+                  >Header 值<span class="optional">允许空值</span></label
+                ><span v-if="valueDrafts.length > 1" class="values-count"
+                  >{{ valueDrafts.length }} 个候选值</span
+                >
+              </div>
+              <p v-if="valueDrafts.length > 1" class="field-help">
+                选中一个值用于注入，保存后可在列表快速切换。
+              </p>
+              <div
+                v-for="(_, index) in valueDrafts"
+                :key="index"
+                class="value-draft"
+                :class="{
+                  'is-selected':
+                    valueDrafts.length > 1 && selectedValueIndex === index,
+                }"
+              >
+                <div v-if="valueDrafts.length > 1" class="value-draft-heading">
+                  <label class="value-choice"
+                    ><input
+                      v-model="selectedValueIndex"
+                      type="radio"
+                      name="active-header-value"
+                      :value="index"
+                      :disabled="busy"
+                    />{{
+                      selectedValueIndex === index
+                        ? "当前使用"
+                        : `候选值 ${index + 1}`
+                    }}</label
+                  >
+                  <button
+                    type="button"
+                    class="icon-button"
+                    :aria-label="`删除候选值 ${index + 1}`"
+                    :disabled="busy"
+                    @click="removeValue(index)"
+                  >
+                    <X :size="15" />
+                  </button>
+                </div>
+                <textarea
+                  :id="index === 0 ? 'rule-value' : `rule-value-${index}`"
+                  v-model="valueDrafts[index]"
+                  :aria-label="`Header 值 ${index + 1}`"
+                  :rows="valueDrafts.length > 1 ? 2 : 3"
+                  placeholder="输入需要注入的值"
+                  spellcheck="false"
+                  :disabled="busy"
+                />
+              </div>
+              <button
+                type="button"
+                class="text-button add-value"
+                :disabled="busy || valueDrafts.length >= 30"
+                @click="addValue"
+              >
+                <Plus :size="15" />添加候选值
+              </button>
+            </div>
+            <div v-else class="field">
+              <label for="rule-value">Cookie 内容</label
               ><textarea
                 id="rule-value"
                 v-model="form.value"
-                :rows="form.kind === 'cookie' ? 4 : 3"
-                :placeholder="
-                  form.kind === 'cookie'
-                    ? 'tenant=shanghai; debug_mode=1'
-                    : '输入需要注入的值'
-                "
+                :rows="4"
+                placeholder="tenant=shanghai; debug_mode=1"
                 spellcheck="false"
               />
             </div>

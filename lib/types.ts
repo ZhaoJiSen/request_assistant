@@ -5,6 +5,8 @@ export interface Rule {
   kind: RuleKind;
   key: string;
   value: string;
+  /** Optional Header choices; value is the currently selected choice. */
+  values?: string[];
   enabled: boolean;
   scope: "global" | "domain" | "regex";
   pattern: string;

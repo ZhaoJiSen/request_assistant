@@ -3,7 +3,7 @@ export default defineConfig({
   modules: ["@wxt-dev/module-vue"],
   manifest: {
     name: "请求助手",
-    version: "2.0.0",
+    version: "2.1.0",
     minimum_chrome_version: "132",
     description: "管理请求 Header、请求 Cookie 与网站 Cookie，配置保存在本机。",
     permissions: ["storage", "declarativeNetRequest", "cookies", "activeTab"],

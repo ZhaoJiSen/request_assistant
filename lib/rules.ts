@@ -37,6 +37,27 @@ export function validateRule(input: Rule): Rule {
     throw new Error("值过长，请限制在 16,000 字符以内");
   if (rule.kind === "header" && rule.key.toLowerCase() === "cookie")
     throw new Error("请在「请求 Cookie」中管理 Cookie 头");
+  if (rule.values !== undefined) {
+    if (
+      rule.kind !== "header" ||
+      !Array.isArray(rule.values) ||
+      !rule.values.length ||
+      rule.values.length > 30 ||
+      rule.values.some((value) => typeof value !== "string")
+    )
+      throw new Error("Header 候选值应为 1–30 个文本值");
+    if (
+      rule.values.some(
+        (value) => /[\r\n\0]/.test(value) || value.length > 16000,
+      )
+    )
+      throw new Error("候选值不能包含换行或空字符，且不能超过 16,000 字符");
+    if (new Set(rule.values).size !== rule.values.length)
+      throw new Error("候选值不能重复");
+    if (!rule.values.includes(rule.value))
+      throw new Error("当前值必须是候选值之一");
+    rule.values = [...rule.values];
+  }
   if (rule.kind === "header") rule.operation = "set";
   else {
     if (!["set", "append"].includes(rule.operation))
@@ -67,6 +88,19 @@ export function validateRule(input: Rule): Rule {
     }
   } else rule.pattern = "";
   return rule;
+}
+/** Change only the selected value on the current rule, preserving concurrent edits. */
+export function selectRuleValue(
+  config: Config,
+  input: { id: string; environmentId: string; value: string },
+): Config {
+  if (!input || input.environmentId !== config.activeEnvironmentId)
+    throw new Error("环境已切换，请刷新后重试");
+  const rule = activeRules(config).find((r) => r.id === input.id);
+  if (!rule || rule.kind !== "header" || !rule.values?.includes(input.value))
+    throw new Error("候选值已变化，请刷新后重试");
+  rule.value = input.value;
+  return config;
 }
 export function validateConfig(config: Config): Config {
   if (

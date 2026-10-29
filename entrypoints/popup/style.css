@@ -764,7 +764,8 @@ button:disabled svg {
   font-size: 13px;
 }
 .field > input,
-.field > textarea {
+.field > textarea,
+.value-draft textarea {
   border: 1px solid #dce3df;
   padding: 10px 11px;
   border-radius: 7px;
@@ -1013,7 +1014,8 @@ button:disabled svg {
 .environment-delete .field-help {
   margin-top: 4px;
 }
-.field > textarea {
+.field > textarea,
+.value-draft textarea {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   resize: vertical;
   min-height: 82px;
@@ -1446,4 +1448,92 @@ button:disabled svg {
 .transfer-failures strong {
   font-weight: 600;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Header alternatives use the existing select and field language. */
+.rule-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  text-align: left;
+  min-width: 0;
+}
+.rule-value-picker {
+  width: min(100%, 250px);
+}
+.rule-value-picker .select-trigger {
+  min-height: 30px;
+  padding: 3px 9px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  background: #f6f9f9;
+}
+.values-heading,
+.value-draft-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.values-count {
+  color: var(--muted);
+  font-size: 13px;
+}
+.values-heading > label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 550;
+}
+.header-values {
+  gap: 9px;
+}
+.value-draft {
+  min-width: 0;
+}
+.header-values:has(.value-draft-heading) .value-draft {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px 10px;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+.header-values .value-draft.is-selected {
+  border-color: #8abfb7;
+  background: #f3f9f7;
+}
+.value-draft-heading {
+  margin-bottom: 7px;
+}
+.field .value-choice {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.value-choice input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.value-draft textarea {
+  display: block;
+  width: 100%;
+}
+.value-draft:has(.value-draft-heading) textarea {
+  min-height: 64px;
+}
+.add-value {
+  align-self: flex-start;
+}
+@media (prefers-reduced-motion: reduce) {
+  .header-values .value-draft {
+    transition: none;
+  }
 }
