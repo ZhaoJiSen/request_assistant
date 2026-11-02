@@ -72,6 +72,7 @@ npm run dev
 
 ```sh
 npm run typecheck       # TypeScript / Vue 类型检查
+npm run build           # 本地构建，输出 .output/chrome-mv3，不生成 ZIP
 npm test               # 规则、事务回滚、并发、Cookie 测试
 npm run test:popup      # 从真实工具栏入口验证弹窗自动尺寸
 npm run test:browser    # 隔离 Chrome + 本机测试网站，验证真实请求
