@@ -20,4 +20,10 @@
 - 已核对 GitHub 官方 gh release create、GITHUB_TOKEN 权限及 matching-refs API 文档。
 - 本次仅修改发布配置和说明，未修改插件代码、依赖或版本，未本地生成 ZIP。由主 Agent 检查，未独立评审。
 
-云端端到端发布待推送后验证，尚未据本地检查宣称 Release 创建成功。
+## 云端验证
+
+- 修复提交 3450b7fb75720a3246f831af836d9a44aa20ab13 推送后，以 2.2.0 手动触发 workflow。
+- [运行 41440291741](https://github.com/ZhaoJiSen/request_assistant/actions/runs/41440291741) 全部成功：依赖安装、类型检查、逻辑测试、生产 ZIP 构建、ZIP 内容与版本校验、备份上传、Release 创建及下载摘要。
+- [v2.2.0 Release](https://github.com/ZhaoJiSen/request_assistant/releases/tag/v2.2.0) 已正式发布，isDraft 与 isPrerelease 均为 false。
+- API 读回确认 v2.2.0 标签指向上述构建提交；附件 request-helper-2.2.0-chrome.zip 为 uploaded 状态，大小 78,175 字节。
+- 未覆盖旧版本或本地打包，未修改用户插件数据。
