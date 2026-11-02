@@ -1,17 +1,28 @@
 # 请求助手
 
+[![手动打包 ZIP](https://github.com/ZhaoJiSen/request_assistant/actions/workflows/package.yml/badge.svg)](https://github.com/ZhaoJiSen/request_assistant/actions/workflows/package.yml)
+
 一个中文 Chrome 插件，集中管理请求 Header、请求 Cookie 和浏览器中保存的网站 Cookie。
 
 ## 直接安装
 
 无需安装 Node.js，也不需要运行开发命令。Chrome 版本需为 **132 或更新版本**。
 
-1. 先停用旧版插件，避免两个插件重复修改同一个请求。
-2. 打开 `chrome://extensions/`，开启右上角「开发者模式」。
-3. 点击「加载已解压的扩展程序」，选择本项目里的 **`chrome-extension` 文件夹**，不是整个项目目录。
-4. 在工具栏固定 请求助手，打开需要调试的网站后点击插件图标。
+1. 打开仓库的 [Actions → 手动打包 ZIP](https://github.com/ZhaoJiSen/request_assistant/actions/workflows/package.yml)，点击 **Run workflow**。
+2. 选择代码分支，输入版本号（如 `2.2.0`），再次点击 **Run workflow**。
+3. 等待运行成功，在运行页面的 **Artifacts** 下载 `request-helper-2.2.0-chrome.zip`，解压到准备长期保留的目录。
+4. 打开 `chrome://extensions/`，开启右上角「开发者模式」；点击「加载已解压的扩展程序」，选择包含 **`manifest.json`** 的解压目录。
+5. 在工具栏固定「请求助手」，打开需要调试的网站后点击插件图标。首次替换其他旧版插件时先停用旧版，避免重复修改请求。
 
-源码、依赖、截图和测试均不需要提交给 Chrome。安装后请保留 `chrome-extension` 目录，不要移动它；移动后需要重新加载。
+升级现有插件时，将新 ZIP 的内容覆盖到原安装目录，再点击该插件的「重新加载」；保留目录和扩展 ID 才能继续读取原配置。
+
+### 云端打包说明
+
+- 版本号使用 `X.Y.Z`，每段为 0–65535，不能全部为 0；不带 `v` 或 `-beta` 等后缀。
+- 云端使用 Node.js 24、`npm ci`、类型检查、逻辑测试，再生成正式 Chrome Manifest V3 ZIP；产物版本会与输入再次核对。
+- 版本仅写入本次运行的 package.json / lockfile 和插件 manifest，不自动提交版本修改、创建 tag 或发布 Release。
+- ZIP 直接作为单个文件上传，不额外嵌套一层 ZIP。下载需要登录 GitHub，产物保留 **30 天**；过期后可按同样步骤重新运行。
+- 手动工作流只在点击 Run workflow 时打包；本地不再生成发布 ZIP 或复制安装目录。首次配置需将工作流推送到默认分支 `master`，Actions 页面才显示手动入口。
 
 ## 三种能力
 
@@ -62,11 +73,12 @@ npm run dev
 ```sh
 npm run typecheck       # TypeScript / Vue 类型检查
 npm test               # 规则、事务回滚、并发、Cookie 测试
-npm run package:local  # 生成可直接加载的 chrome-extension 目录
 npm run test:popup      # 从真实工具栏入口验证弹窗自动尺寸
 npm run test:browser    # 隔离 Chrome + 本机测试网站，验证真实请求
 npm run preview        # 仅开发用 UI 预览，使用独立的虚构配置
 ```
+
+本地通过 `npm run dev` 调试，输出在 `.output/chrome-mv3-dev/`；如需浏览器回归，先让开发模式生成该目录。正式安装 ZIP 统一从 GitHub Actions 获取。
 
 `test:browser` 默认使用 macOS 的 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`；其他平台通过 `CHROME_PATH` 指定可执行文件。测试创建临时 profile，不使用个人浏览器数据。
 
@@ -82,7 +94,9 @@ lib/controller.ts           串行修改、保存失败回滚、启动恢复
 lib/cookies.ts              真实 Cookie 查询、写入、删除
 lib/client.ts               类型化 UI 通信和独立开发预览
 tests/                      逻辑测试和隔离 Chrome 端到端测试
-chrome-extension/           直接加载到 Chrome 的成品
+.github/workflows/         GitHub 手动打包工作流
+scripts/                    CI 版本设置与 ZIP 验证
+.output/chrome-mv3-dev/     npm run dev 的本地调试输出
 docs/                       设计、评审和验证记录
 evidence/                   页面截图、录像、浏览器验证报告
 ```

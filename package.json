@@ -6,9 +6,6 @@
   "scripts": {
     "dev": "wxt",
     "prepare": "wxt prepare",
-    "package:local": "wxt build --mode development && node scripts/package-local.mjs",
-    "build": "wxt build",
-    "zip": "wxt zip",
     "typecheck": "vue-tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:browser": "node tests/browser-e2e.mjs",

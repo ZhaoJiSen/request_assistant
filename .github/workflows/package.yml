@@ -1,0 +1,65 @@
+name: 手动打包 ZIP
+run-name: 打包请求助手 ${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号，例如 2.2.0（X.Y.Z，不带 v）"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: 检查并打包 Chrome 插件
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: 获取代码
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: 校验并设置本次构建版本
+        run: node scripts/set-package-version.mjs
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 逻辑测试
+        run: npm test
+
+      - name: 生成正式 Chrome ZIP
+        run: npx --no-install wxt zip --browser chrome
+
+      - name: 验证 ZIP 内容与版本
+        run: python3 scripts/verify-package.py
+
+      - name: 上传 ZIP（保留 30 天）
+        id: upload
+        uses: actions/upload-artifact@v7
+        with:
+          path: .output/request-helper-${{ inputs.version }}-chrome.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 写入下载说明
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          printf '### 请求助手 %s\n\n[下载 ZIP](%s)\n\n解压后在 Chrome 扩展管理页加载包含 manifest.json 的文件夹。\n' "$VERSION" "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"

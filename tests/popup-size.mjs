@@ -95,7 +95,7 @@ async function until(fn, label) {
 try {
   console.log("Browser", (await cdp("Browser.getVersion")).product);
   const { id: extensionId } = await cdp("Extensions.loadUnpacked", {
-    path: resolve(root, "chrome-extension"),
+    path: resolve(root, ".output/chrome-mv3-dev"),
   });
   const { targetId: fixtureId } = await cdp("Target.createTarget", {
     url: origin,
