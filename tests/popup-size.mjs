@@ -95,7 +95,9 @@ async function until(fn, label) {
 try {
   console.log("Browser", (await cdp("Browser.getVersion")).product);
   const { id: extensionId } = await cdp("Extensions.loadUnpacked", {
-    path: resolve(root, ".output/chrome-mv3-dev"),
+    path: resolve(
+      process.env.EXTENSION_PATH || resolve(root, ".output/chrome-mv3-dev"),
+    ),
   });
   const { targetId: fixtureId } = await cdp("Target.createTarget", {
     url: origin,
@@ -186,8 +188,14 @@ try {
     const initial = await measure();
     console.log("Native initial size", JSON.stringify(initial));
     const capture = async (name) => {
-      await evaluate(popup, "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
-      await evaluate(popup, "Promise.all(document.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{}))).then(()=>true)");
+      await evaluate(
+        popup,
+        "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+      );
+      await evaluate(
+        popup,
+        "Promise.all(document.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{}))).then(()=>true)",
+      );
       const shot = await cdp(
         "Page.captureScreenshot",
         { format: "png", captureBeyondViewport: false },

@@ -6,7 +6,10 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const evidence = resolve(root, "evidence/header-value-aliases/browser");
+const evidence = resolve(
+  root,
+  process.env.EVIDENCE_DIR || "evidence/popup-alias-polish/browser",
+);
 await mkdir(evidence, { recursive: true });
 const chromePath =
   process.env.CHROME_PATH ||
@@ -106,7 +109,9 @@ function passed(label) {
 try {
   console.log("Browser", (await cdp("Browser.getVersion")).product);
   const { id: extensionId } = await cdp("Extensions.loadUnpacked", {
-    path: resolve(root, ".output/chrome-mv3-dev"),
+    path: resolve(
+      process.env.EXTENSION_PATH || resolve(root, ".output/chrome-mv3-dev"),
+    ),
   });
   assert.ok(extensionId);
   passed("unpacked Manifest V3 extension loads");
@@ -300,7 +305,7 @@ try {
   assert.equal(
     await evaluate(
       popup,
-      "document.querySelector('.rule-value-picker .select-value').textContent",
+      "document.querySelector('.rule-value-picker .select-value > span:first-child').textContent",
     ),
     "899",
   );
@@ -311,6 +316,20 @@ try {
 
   await menu(".rule-value-picker button");
   await snapshot("menu");
+  assert.equal(
+    await evaluate(
+      popup,
+      "document.querySelector('.select-option-description').textContent",
+    ),
+    "未设置别名",
+  );
+  assert.equal(
+    await evaluate(
+      popup,
+      "document.querySelector('.select-column-labels').textContent",
+    ),
+    "值别名",
+  );
   await click(".select-option:nth-child(1)");
   await idle();
   assert.equal((await echo())["pversion-id"], "898");
@@ -318,7 +337,7 @@ try {
   assert.equal(
     await evaluate(
       popup,
-      "document.querySelector('.rule-value-picker .select-value').textContent",
+      "document.querySelector('.rule-value-picker .select-value > span:first-child').textContent",
     ),
     "898",
   );
@@ -484,7 +503,7 @@ try {
       popup,
       "document.querySelector('.rule-value-picker .select-value').textContent",
     ),
-    "生产831",
+    "831生产",
   );
   passed(
     "footer quick-add persists alias and immediately applies the new Header value",
@@ -501,6 +520,50 @@ try {
   await saveEditor();
   await menu(".rule-value-picker button");
   await snapshot("aliases-menu");
+  assert.deepEqual(
+    await evaluate(
+      popup,
+      "[...document.querySelectorAll('.select-option-description')].map(e=>e.textContent)",
+    ),
+    ["测试环境", "预发布", "生产"],
+  );
+  assert.equal(
+    await evaluate(
+      popup,
+      "[...document.querySelectorAll('.select-option-description')].every(e=>e.getBoundingClientRect().width>0 && getComputedStyle(e).visibility==='visible')",
+    ),
+    true,
+  );
+  await key("Escape");
+  const { targetId: blankId } = await cdp("Target.createTarget", {
+    url: "about:blank",
+  });
+  await cdp("Target.activateTarget", { targetId: blankId });
+  await reloadPopup();
+  assert.equal(
+    await evaluate(
+      popup,
+      "!!document.querySelector('.site-context.is-unavailable')",
+    ),
+    true,
+  );
+  await menu(".rule-value-picker button");
+  await snapshot("no-site-menu");
+  assert.deepEqual(
+    await evaluate(
+      popup,
+      "[...document.querySelectorAll('.select-option-description')].map(e=>e.textContent)",
+    ),
+    ["测试环境", "预发布", "生产"],
+  );
+  await key("Escape");
+  await cdp("Target.activateTarget", { targetId: fixtureId });
+  await cdp("Target.closeTarget", { targetId: blankId });
+  await reloadPopup();
+  await menu(".rule-value-picker button");
+  passed(
+    "aliases remain visible on non-website tabs and rules survive reopening on a website",
+  );
   await fill(".select-search input", "预发");
   assert.equal(
     await evaluate(popup, "document.querySelectorAll('.select-option').length"),

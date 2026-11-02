@@ -113,22 +113,15 @@ function removeValue(index: number) {
 }
 function valueOptions(rule: Rule) {
   return (rule.values || [rule.value]).map((value, index) => {
-    const alias = rule.valueAliases?.[index] || "";
-    const display =
-      isSensitive(rule) && !revealed.has(rule.id)
-        ? "••••••••"
-        : value || "（空值）";
+    const alias = rule.valueAliases?.[index]?.trim() || "";
     return {
       value,
       label:
-        alias ||
-        (isSensitive(rule) && !revealed.has(rule.id)
-          ? `候选值 ${index + 1}`
-          : display),
-      description:
-        alias || (isSensitive(rule) && !revealed.has(rule.id))
-          ? display
-          : undefined,
+        isSensitive(rule) && !revealed.has(rule.id)
+          ? `值 ${index + 1} · ••••••`
+          : value || "（空值）",
+      description: alias || "未设置别名",
+      descriptionPlaceholder: !alias,
     };
   });
 }
@@ -642,14 +635,18 @@ onUnmounted(() => {
           /></span>
         </button>
       </header>
-      <section class="site-context" aria-label="当前网站">
+      <section
+        class="site-context"
+        :class="{ 'is-unavailable': !context }"
+        aria-label="当前网站"
+      >
         <span class="site-icon"><Globe2 :size="19" /></span>
         <div class="site-text">
           <span class="context-label">{{
-            context ? "当前网站" : "当前页面"
+            context ? "当前网站" : "打开网页后可管理网站 Cookie"
           }}</span
           ><strong :title="context?.url">{{
-            context?.host || "请切换到网站页面"
+            context?.host || "未选中网站"
           }}</strong>
         </div>
         <span
@@ -659,7 +656,9 @@ onUnmounted(() => {
           ><span
             class="status-dot"
             :class="{ muted: !matchedCount || state.syncError }"
-          />{{ state.syncError ? "规则应用异常" : `${matchedCount} 条匹配` }}</span
+          />{{
+            state.syncError ? "规则应用异常" : `${matchedCount} 条匹配`
+          }}</span
         >
       </section>
       <nav class="tab-bar" role="tablist" aria-label="配置类型">
@@ -812,7 +811,7 @@ onUnmounted(() => {
           <article
             v-for="rule in filteredRules"
             :key="rule.id"
-            class="rule-row"
+            class="rule-row request-rule-row"
             :class="{ disabled: !rule.enabled || !state.config.enabled }"
           >
             <button
@@ -850,6 +849,7 @@ onUnmounted(() => {
                 v-if="rule.kind === 'header'"
                 class="rule-value-picker"
                 searchable
+                :columns="{ label: '值', description: '别名' }"
                 add-label="添加值"
                 :add-disabled="(rule.values?.length || 1) >= 30"
                 :model-value="rule.value"
@@ -1046,7 +1046,9 @@ onUnmounted(() => {
           :disabled="busy || loading"
           @click="refresh"
         >
-          <RefreshCw :size="13" />{{ tab === "site" ? "重新读取" : "重新应用规则" }}
+          <RefreshCw :size="13" />{{
+            tab === "site" ? "重新读取" : "重新应用规则"
+          }}
         </button>
       </footer>
     </div>

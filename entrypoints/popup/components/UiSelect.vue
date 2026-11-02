@@ -13,6 +13,7 @@ export interface SelectOption {
   value: string;
   label: string;
   description?: string;
+  descriptionPlaceholder?: boolean;
   disabled?: boolean;
 }
 const props = defineProps<{
@@ -22,6 +23,7 @@ const props = defineProps<{
   id?: string;
   disabled?: boolean;
   searchable?: boolean;
+  columns?: { label: string; description: string };
   addLabel?: string;
   addDisabled?: boolean;
 }>();
@@ -295,9 +297,12 @@ onUnmounted(() => {
       <slot name="leading" />
       <span class="select-value"
         ><span>{{ selected?.label || "请选择" }}</span
-        ><span v-if="selected?.description" class="select-value-description">{{
-          selected.description
-        }}</span></span
+        ><span
+          v-if="selected?.description"
+          class="select-value-description"
+          :class="{ 'is-placeholder': selected.descriptionPlaceholder }"
+          >{{ selected.description }}</span
+        ></span
       >
       <ChevronDown
         :size="15"
@@ -311,7 +316,10 @@ onUnmounted(() => {
           v-if="open"
           ref="menu"
           class="select-popover"
-          :class="{ 'select-searchable': searchable }"
+          :class="{
+            'select-searchable': searchable,
+            'select-with-columns': !!columns,
+          }"
           :style="position"
           @keydown="keydown"
         >
@@ -329,6 +337,11 @@ onUnmounted(() => {
               autocomplete="off"
               spellcheck="false"
             />
+          </div>
+          <div v-if="columns" class="select-column-labels" aria-hidden="true">
+            <span>{{ columns.label }}</span
+            ><span>{{ columns.description }}</span
+            ><span />
           </div>
           <div
             :id="listId"
@@ -362,6 +375,7 @@ onUnmounted(() => {
                 ><span
                   v-if="option.description"
                   class="select-option-description"
+                  :class="{ 'is-placeholder': option.descriptionPlaceholder }"
                   >{{ option.description }}</span
                 ></span
               ><Check v-if="option.value === modelValue" :size="15" />
