@@ -3,7 +3,12 @@ import { importCookies } from "../lib/cookie-transfer";
 import { importRules, type ImportRequest } from "../lib/transfer";
 import { createController } from "../lib/controller";
 import { updateEnvironment } from "../lib/environments";
-import { addRuleValue, selectRuleValue } from "../lib/rules";
+import {
+  addRuleValue,
+  editRuleValue,
+  removeRuleValue,
+  selectRuleValue,
+} from "../lib/rules";
 import {
   currentContext,
   listCookies,
@@ -73,6 +78,22 @@ export default defineBackground(() => {
           selectRuleValue(
             c,
             message.payload as Parameters<typeof selectRuleValue>[1],
+          ),
+        );
+        return state();
+      case "REMOVE_RULE_VALUE":
+        await controller.mutate((c) =>
+          removeRuleValue(
+            c,
+            message.payload as Parameters<typeof removeRuleValue>[1],
+          ),
+        );
+        return state();
+      case "EDIT_RULE_VALUE":
+        await controller.mutate((c) =>
+          editRuleValue(
+            c,
+            message.payload as Parameters<typeof editRuleValue>[1],
           ),
         );
         return state();

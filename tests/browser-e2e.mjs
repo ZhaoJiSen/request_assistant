@@ -365,11 +365,11 @@ try {
   assert.equal(
     await evaluate(
       popup,
-      'document.querySelector(".rule-row:last-child").getBoundingClientRect().bottom <= document.querySelector(".app-footer").getBoundingClientRect().top - 20',
+      'document.querySelector(".rule-row:last-child").getBoundingClientRect().bottom <= document.querySelector(".rule-list").getBoundingClientRect().bottom - 20',
     ),
     true,
   );
-  passed("last rule remains readable above fixed footer after scrolling");
+  passed("last rule remains readable at the bottom of the scrolling list");
   await snapshot("headers");
   await evaluate(popup, 'document.querySelector("#tab-cookie").click()');
   await until(

@@ -7,6 +7,8 @@ import {
   validateConfig,
   validateRule,
   selectRuleValue,
+  editRuleValue,
+  removeRuleValue,
 } from "../lib/rules";
 import { emptyConfig, type Rule, type EnvironmentCommand } from "../lib/types";
 import { exportRules, parseRules } from "../lib/transfer";
@@ -297,4 +299,230 @@ test("quick add merges with latest rule, preserves flags and rejects duplicates,
     "",
     "生产",
   ]);
+});
+
+test("inline edits change only the requested candidate field and preserve current selection", async () => {
+  const f = fixture({
+    ...emptyConfig(),
+    rules: [
+      rule({
+        value: "898",
+        values: ["898", "899"],
+        valueAliases: ["测试", "预发布"],
+      }),
+    ],
+  });
+  const input = {
+    id: "legacy-rule",
+    environmentId: "default",
+    value: "899",
+    field: "value" as const,
+    text: "900",
+    previousAlias: "预发布",
+  };
+  await f.controller.mutate((c) => editRuleValue(c, input));
+  assert.equal((await f.controller.read()).rules[0]!.value, "898");
+  assert.equal(f.installed()[0]!.action.requestHeaders![0]!.value, "898");
+  await f.controller.mutate((c) =>
+    editRuleValue(c, { ...input, value: "898", text: "901" }),
+  );
+  assert.equal(f.installed()[0]!.action.requestHeaders![0]!.value, "901");
+  await f.controller.mutate((c) => {
+    c.rules[0]!.includeSubdomains = true;
+    return c;
+  });
+  await f.controller.mutate((c) =>
+    editRuleValue(c, {
+      ...input,
+      value: "900",
+      field: "alias",
+      text: "  灰度  ",
+    }),
+  );
+  const saved = (await f.controller.read()).rules[0]!;
+  assert.deepEqual(saved.values, ["901", "900"]);
+  assert.deepEqual(saved.valueAliases, ["测试", "灰度"]);
+  assert.equal(saved.includeSubdomains, true);
+  assert.equal(saved.value, "901");
+  const restarted = fixture(f.store[CONFIG_KEY]);
+  assert.deepEqual((await restarted.controller.read()).rules[0]!.valueAliases, [
+    "测试",
+    "灰度",
+  ]);
+});
+
+test("inline edits reject invalid or stale input without altering saved state", async () => {
+  const initial = {
+    ...emptyConfig(),
+    rules: [
+      rule({
+        value: "898",
+        values: ["898", "899"],
+        valueAliases: ["测试", "预发布"],
+      }),
+    ],
+  };
+  const input = {
+    id: "legacy-rule",
+    environmentId: "default",
+    value: "899",
+    field: "value" as "value" | "alias",
+    text: "900",
+    previousAlias: "预发布",
+  };
+  const f = fixture(initial);
+  await f.controller.sync();
+  for (const invalid of [
+    { ...input, text: "898" },
+    { ...input, text: "bad\nvalue" },
+    { ...input, text: "x".repeat(16001) },
+    { ...input, value: "gone" },
+    { ...input, environmentId: "other" },
+    { ...input, id: "gone" },
+    { ...input, field: "alias" as const, previousAlias: "old" },
+    { ...input, field: "alias" as const, text: "x".repeat(49) },
+  ]) {
+    await assert.rejects(f.controller.mutate((c) => editRuleValue(c, invalid)));
+    assert.equal((await f.controller.read()).rules[0]!.value, "898");
+    assert.deepEqual((await f.controller.read()).rules[0]!.valueAliases, [
+      "测试",
+      "预发布",
+    ]);
+    assert.equal(f.installed()[0]!.action.requestHeaders![0]!.value, "898");
+  }
+});
+
+test("failed inline commits roll back; paused and disabled rules stay inactive", async () => {
+  const config = {
+    ...emptyConfig(),
+    rules: [rule({ value: "898", values: ["898", "899"] })],
+  };
+  const f = fixture(config);
+  await f.controller.sync();
+  const input = {
+    id: "legacy-rule",
+    environmentId: "default",
+    value: "898",
+    field: "value" as const,
+    text: "900",
+    previousAlias: "",
+  };
+  for (const failure of ["dnr", "storage"] as const) {
+    f.fail(failure);
+    await assert.rejects(
+      f.controller.mutate((c) => editRuleValue(c, input)),
+      /failed/,
+    );
+    assert.equal((await f.controller.read()).rules[0]!.value, "898");
+    assert.equal(f.installed()[0]!.action.requestHeaders![0]!.value, "898");
+  }
+  for (const paused of [true, false]) {
+    const quiet = fixture({
+      ...config,
+      enabled: !paused,
+      rules: [{ ...config.rules[0]!, enabled: paused }],
+    });
+    await quiet.controller.mutate((c) => editRuleValue(c, input));
+    assert.equal(quiet.installed().length, 0);
+    assert.equal((await quiet.controller.read()).enabled, !paused);
+    assert.equal((await quiet.controller.read()).rules[0]!.enabled, paused);
+  }
+});
+
+test("inline edits support a legacy single value, empty values and clearing an alias", () => {
+  const config = { ...emptyConfig(), rules: [rule({ value: "legacy" })] };
+  const input = {
+    id: "legacy-rule",
+    environmentId: "default",
+    value: "legacy",
+    field: "alias" as "alias" | "value",
+    text: "开发",
+    previousAlias: "",
+  };
+  editRuleValue(config, input);
+  assert.deepEqual(config.rules[0]!.values, ["legacy"]);
+  editRuleValue(config, { ...input, field: "value", text: "" });
+  assert.equal(config.rules[0]!.value, "");
+  assert.deepEqual(config.rules[0]!.valueAliases, ["开发"]);
+  editRuleValue(config, {
+    ...input,
+    value: "",
+    text: "",
+    previousAlias: "开发",
+  });
+  assert.deepEqual(config.rules[0]!.valueAliases, [""]);
+  assert.equal(validateConfig(config).rules[0]!.value, "");
+});
+
+test("candidate deletion handles empty/current values, aligned aliases and latest metadata", () => {
+  const config = {
+    ...emptyConfig(),
+    rules: [
+      rule({
+        value: "",
+        values: ["898", "", "831"],
+        valueAliases: ["测试", "空值", "生产"],
+        enabled: false,
+      }),
+    ],
+  };
+  const input = { id: "legacy-rule", environmentId: "default", value: "831" };
+  removeRuleValue(config, input);
+  assert.equal(config.rules[0]!.value, "");
+  assert.deepEqual(config.rules[0]!.valueAliases, ["测试", "空值"]);
+  config.rules[0]!.key = "X-Latest";
+  removeRuleValue(config, { ...input, value: "" });
+  assert.equal(config.rules[0]!.value, "898");
+  assert.deepEqual(config.rules[0]!.values, ["898"]);
+  assert.deepEqual(config.rules[0]!.valueAliases, ["测试"]);
+  assert.equal(config.rules[0]!.enabled, false);
+  assert.equal(config.rules[0]!.key, "X-Latest");
+});
+test("deletion rejects stale candidate/environment and the last value atomically", () => {
+  const config = {
+    ...emptyConfig(),
+    rules: [rule({ value: "898", values: ["898"] })],
+  };
+  const before = structuredClone(config);
+  for (const input of [
+    { id: "legacy-rule", environmentId: "default", value: "898" },
+    { id: "legacy-rule", environmentId: "other", value: "898" },
+    { id: "legacy-rule", environmentId: "default", value: "gone" },
+    { id: "gone", environmentId: "default", value: "898" },
+  ]) {
+    assert.throws(() => removeRuleValue(config, input));
+    assert.deepEqual(config, before);
+  }
+});
+test("candidate deletion rolls back DNR/storage failures and preserves pause/disabled states", async () => {
+  const config = {
+    ...emptyConfig(),
+    rules: [rule({ value: "898", values: ["898", "899"] })],
+  };
+  const input = { id: "legacy-rule", environmentId: "default", value: "898" };
+  const f = fixture(config);
+  await f.controller.sync();
+  for (const failure of ["dnr", "storage"] as const) {
+    f.fail(failure);
+    await assert.rejects(
+      f.controller.mutate((c) => removeRuleValue(c, input)),
+      /failed/,
+    );
+    assert.equal((await f.controller.read()).rules[0]!.value, "898");
+    assert.deepEqual((await f.controller.read()).rules[0]!.values, [
+      "898",
+      "899",
+    ]);
+    assert.equal(f.installed()[0]!.action.requestHeaders![0]!.value, "898");
+  }
+  for (const paused of [true, false]) {
+    const quiet = fixture({
+      ...config,
+      enabled: !paused,
+      rules: [{ ...config.rules[0]!, enabled: paused }],
+    });
+    await quiet.controller.mutate((c) => removeRuleValue(c, input));
+    assert.equal(quiet.installed().length, 0);
+    assert.equal((await quiet.controller.read()).rules[0]!.value, "899");
+  }
 });

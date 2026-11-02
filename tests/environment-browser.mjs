@@ -229,6 +229,17 @@ try {
     );
   }
   async function click(selector) {
+    if (selector === ".manage-environments") {
+      await evaluate(
+        popup,
+        "document.querySelector('.environment-picker button').click()",
+      );
+      await until(
+        () =>
+          evaluate(popup, "!!document.querySelector('.manage-environments')"),
+        "environment menu",
+      );
+    }
     await evaluate(
       popup,
       `document.querySelector(${JSON.stringify(selector)}).click()`,
@@ -241,8 +252,23 @@ try {
     );
   }
   async function key(value) {
-    await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: value }, popup);
-    await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: value }, popup);
+    const enter =
+      value === "Enter" ? { code: "Enter", windowsVirtualKeyCode: 13 } : {};
+    await cdp(
+      "Input.dispatchKeyEvent",
+      {
+        type: "keyDown",
+        key: value,
+        ...enter,
+        ...(value === "Enter" ? { text: "\r", unmodifiedText: "\r" } : {}),
+      },
+      popup,
+    );
+    await cdp(
+      "Input.dispatchKeyEvent",
+      { type: "keyUp", key: value, ...enter },
+      popup,
+    );
   }
   async function idle() {
     await until(
@@ -374,6 +400,26 @@ try {
     "custom selects replace native controls, align arrows, fit popup bounds and support keyboard/Escape",
   );
 
+  await menu(".environment-picker .select-trigger");
+  await key("Tab");
+  assert.equal(
+    await evaluate(
+      popup,
+      "document.activeElement.classList.contains('manage-environments')",
+    ),
+    true,
+    "environment management remains keyboard reachable inside the dropdown",
+  );
+  await key("Enter");
+  await until(
+    () => evaluate(popup, '!!document.querySelector(".environment-manager")'),
+    "keyboard opens environment management",
+  );
+  await closeEditor();
+  passed(
+    "Tab and Enter reach environment management through the environment dropdown",
+  );
+
   await createHeader("default");
   const browserCookie = {
     name: "keep_cookie",
@@ -459,7 +505,10 @@ try {
   );
   assert.equal((await message("STATE")).config.activeEnvironmentId, testId);
   assert.equal((await echo())["x-group"], "testing");
-  await until(() => evaluate(popup, '!document.querySelector(".toast")'), "prior success feedback has exited");
+  await until(
+    () => evaluate(popup, '!document.querySelector(".toast")'),
+    "prior success feedback has exited",
+  );
   assert.equal(
     await evaluate(popup, '!!document.querySelector(".toast")'),
     false,

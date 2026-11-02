@@ -2,7 +2,13 @@ import { importRules, planCookies, cookieSnapshot } from "./transfer";
 import type { Config, Context, State, Rule } from "./types";
 import { activeRules, emptyConfig } from "./types";
 import { updateEnvironment } from "./environments";
-import { addRuleValue, selectRuleValue, validateConfig } from "./rules";
+import {
+  addRuleValue,
+  editRuleValue,
+  removeRuleValue,
+  selectRuleValue,
+  validateConfig,
+} from "./rules";
 // Preview is an explicit development route. Production extension always uses Chrome APIs.
 const preview =
   import.meta.env.DEV && location.protocol !== "chrome-extension:";
@@ -119,6 +125,9 @@ async function previewRequest(type: string, payload: any): Promise<any> {
   else if (type === "ADD_RULE_VALUE") config = addRuleValue(config, payload);
   else if (type === "SELECT_RULE_VALUE")
     config = selectRuleValue(config, payload);
+  else if (type === "REMOVE_RULE_VALUE")
+    config = removeRuleValue(config, payload);
+  else if (type === "EDIT_RULE_VALUE") config = editRuleValue(config, payload);
   else if (type === "IMPORT_COOKIES") {
     if (payload.expected !== cookieSnapshot(cookies))
       throw new Error("网站 Cookie 已变化，请返回列表后重新导入");

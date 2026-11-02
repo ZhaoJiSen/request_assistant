@@ -204,6 +204,16 @@ try {
     downloadPath: downloads,
   });
   const click = async (selector) => {
+    if ([".import-button", ".export-button"].includes(selector)) {
+      await evaluate(
+        popup,
+        "document.querySelector('.action-menu-trigger').click()",
+      );
+      await until(
+        () => evaluate(popup, "!!document.querySelector('.action-menu')"),
+        "action menu",
+      );
+    }
     await evaluate(
       popup,
       `document.querySelector(${JSON.stringify(selector)}).click()`,
@@ -237,7 +247,7 @@ try {
       () =>
         evaluate(
           popup,
-          `performance.timeOrigin!==${before} && !!document.querySelector('.import-button') && !document.querySelector('.import-button').disabled`,
+          `performance.timeOrigin!==${before} && !!document.querySelector('.action-menu-trigger') && !document.querySelector('.action-menu-trigger').disabled`,
         ),
       "reload popup",
     );
@@ -473,7 +483,10 @@ try {
   await click("#tab-site");
   await until(
     () =>
-      evaluate(popup, "!document.querySelector('.refresh-cookies').disabled"),
+      evaluate(
+        popup,
+        "!!document.querySelector('.cookie-list') && document.querySelector('#content-panel').getAttribute('aria-busy') === 'false'",
+      ),
     "cookie list",
   );
   const cookieFile = [
@@ -610,10 +623,12 @@ try {
   await openImport("bulk_sid=updated-value");
   await customSelect("#import-conflict", "覆盖");
   await confirmImport();
-  const plainReplaced = (await message("COOKIES",{url:ctx.url})).find(c=>c.name === "bulk_sid");
-  assert.equal(plainReplaced.value,"updated-value");
-  assert.equal(plainReplaced.httpOnly,true);
-  assert.ok(plainReplaced.expirationDate > Date.now()/1000);
+  const plainReplaced = (await message("COOKIES", { url: ctx.url })).find(
+    (c) => c.name === "bulk_sid",
+  );
+  assert.equal(plainReplaced.value, "updated-value");
+  assert.equal(plainReplaced.httpOnly, true);
+  assert.ok(plainReplaced.expirationDate > Date.now() / 1000);
   passed(
     "website Cookie export preserves attributes and round-trips with explicit conflict handling",
   );

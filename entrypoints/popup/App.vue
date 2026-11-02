@@ -7,11 +7,8 @@ import {
   Cookie,
   Eye,
   EyeOff,
-  Download,
-  Upload,
   Globe2,
   Info,
-  Layers,
   LockKeyhole,
   Pencil,
   Plus,
@@ -22,7 +19,11 @@ import {
   X,
 } from "lucide-vue-next";
 import { request, isPreview } from "../../lib/client";
-import UiSelect from "./components/UiSelect.vue";
+import UiSelect, {
+  type SelectOptionAdd,
+  type SelectOptionEdit,
+} from "./components/UiSelect.vue";
+import RuleActions from "./components/RuleActions.vue";
 import TransferPanel from "./components/TransferPanel.vue";
 import type { TransferTarget } from "../../lib/transfer";
 import EnvironmentManager from "./components/EnvironmentManager.vue";
@@ -59,6 +60,7 @@ const context = ref<Context | null>(null);
 const cookies = ref<chrome.cookies.Cookie[]>([]);
 const loading = ref(true);
 const busy = ref(false);
+const inlineSaving = ref("");
 const cookieLoading = ref(false);
 const error = ref("");
 const notice = ref("");
@@ -66,9 +68,7 @@ const query = ref("");
 const scopeFilter = ref("all");
 const revealed = reactive(new Set<string>());
 const confirmDelete = ref("");
-const editor = ref<
-  "rule" | "value" | "site" | "environments" | "transfer" | null
->(null);
+const editor = ref<"rule" | "site" | "environments" | "transfer" | null>(null);
 const editorError = ref("");
 const transferMode = ref<"import" | "export">("import");
 const transferTarget = ref<TransferTarget>("header");
@@ -85,13 +85,6 @@ const form = reactive<Rule>({
 });
 const valueDrafts = ref<string[]>([""]);
 const aliasDrafts = ref<string[]>([""]);
-const quickValue = reactive({
-  id: "",
-  environmentId: "",
-  key: "",
-  value: "",
-  alias: "",
-});
 const selectedValueIndex = ref(0);
 async function addValue() {
   if (busy.value || valueDrafts.value.length >= 30) return;
@@ -125,18 +118,6 @@ function valueOptions(rule: Rule) {
     };
   });
 }
-function openQuickValue(rule: Rule) {
-  Object.assign(quickValue, {
-    id: rule.id,
-    environmentId: state.value.config.activeEnvironmentId,
-    key: rule.key,
-    value: "",
-    alias: "",
-  });
-  editor.value = "value";
-  editorError.value = "";
-  void focusEditor();
-}
 const cookieForm = reactive<CookieInput>({
   name: "",
   value: "",
@@ -167,9 +148,6 @@ const scopeOptions = computed(() => [
     ? [{ value: "regex", label: "旧版域名正则" }]
     : []),
 ]);
-const enabledCount = computed(
-  () => currentRules.value.filter((r) => r.enabled).length,
-);
 const matchedCount = computed(() =>
   state.value.config.enabled && context.value
     ? currentRules.value.filter(
@@ -418,18 +396,8 @@ function closeEditor() {
   }
 }
 async function save() {
-  const valueReturnFocus =
-    editor.value === "value" ? editorReturnFocus.value : null;
   await run(async () => {
-    if (editor.value === "value") {
-      state.value = await request<State>("ADD_RULE_VALUE", { ...quickValue });
-      flash(
-        state.value.config.enabled &&
-          state.value.config.rules.find((r) => r.id === quickValue.id)?.enabled
-          ? `${quickValue.key} 已添加并切换到新值`
-          : "候选值已添加，当前未开启注入",
-      );
-    } else if (editor.value === "rule") {
+    if (editor.value === "rule") {
       const value = validateRule({
         ...form,
         ...(form.kind === "header"
@@ -466,11 +434,6 @@ async function save() {
     }
     editor.value = null;
   }, true);
-  if (!editor.value && valueReturnFocus)
-    await nextTick(() => {
-      if (valueReturnFocus.isConnected)
-        valueReturnFocus.focus({ preventScroll: true });
-    });
 }
 async function toggleAll() {
   await run(async () => {
@@ -495,6 +458,61 @@ async function changeRuleValue(rule: Rule, value: string) {
         : `${rule.key} 的值已保存，当前未开启注入`,
     );
   });
+}
+async function addRuleOption(rule: Rule, value: SelectOptionAdd) {
+  if (busy.value) throw new Error("操作进行中，请稍后重试");
+  inlineSaving.value = rule.id;
+  busy.value = true;
+  try {
+    state.value = await request<State>("ADD_RULE_VALUE", {
+      ...value,
+      id: rule.id,
+      environmentId:
+        rule.environmentId || state.value.config.activeEnvironmentId,
+    });
+    flash(
+      state.value.config.enabled && rule.enabled
+        ? `${rule.key} 已添加并切换到新值`
+        : "候选值已添加，当前未开启注入",
+    );
+  } finally {
+    busy.value = false;
+    inlineSaving.value = "";
+  }
+}
+async function removeRuleOption(rule: Rule, value: string) {
+  if (busy.value) throw new Error("操作进行中，请稍后重试");
+  inlineSaving.value = rule.id;
+  busy.value = true;
+  try {
+    state.value = await request<State>("REMOVE_RULE_VALUE", {
+      value,
+      id: rule.id,
+      environmentId:
+        rule.environmentId || state.value.config.activeEnvironmentId,
+    });
+    flash("候选值已删除");
+  } finally {
+    busy.value = false;
+    inlineSaving.value = "";
+  }
+}
+async function editRuleOption(rule: Rule, edit: SelectOptionEdit) {
+  if (busy.value) throw new Error("操作进行中，请稍后重试");
+  inlineSaving.value = rule.id;
+  busy.value = true;
+  try {
+    state.value = await request<State>("EDIT_RULE_VALUE", {
+      ...edit,
+      id: rule.id,
+      environmentId:
+        rule.environmentId || state.value.config.activeEnvironmentId,
+    });
+    flash(edit.field === "alias" ? "别名已保存" : "候选值已保存");
+  } finally {
+    busy.value = false;
+    inlineSaving.value = "";
+  }
 }
 async function toggleRule(rule: Rule) {
   await run(async () => {
@@ -592,13 +610,22 @@ onUnmounted(() => {
 
 <template>
   <main class="app-shell">
-    <div class="main-view" :inert="editor ? true : undefined">
+    <div class="main-view" :inert="editor || inlineSaving ? true : undefined">
       <header class="app-header">
         <div class="brand">
-          <span class="brand-symbol"
-            ><Settings2 :size="18" :stroke-width="1.6"
-          /></span>
           <h1>请求助手</h1>
+          <section v-if="context" class="site-context" aria-label="当前网站">
+            <strong
+              class="site-host"
+              :title="`${context.url} · ${matchedCount} 条匹配`"
+              >{{ context.host }}</strong
+            >
+            <span class="sr-only match-summary">{{
+              state.syncError
+                ? "规则应用异常"
+                : `${matchedCount} 条规则匹配当前页面 URL，不代表实际请求命中次数`
+            }}</span>
+          </section>
         </div>
         <div class="environment-controls">
           <UiSelect
@@ -609,92 +636,80 @@ onUnmounted(() => {
             :disabled="busy || loading"
             @update:model-value="selectEnvironment"
           >
-            <template #leading><Layers :size="14" /></template>
+            <template #footer>
+              <button
+                type="button"
+                class="manage-environments"
+                :disabled="busy || loading"
+                @click="openEnvironments"
+              >
+                <Settings2 :size="15" />管理环境
+              </button>
+            </template>
           </UiSelect>
-          <button
-            type="button"
-            class="icon-button manage-environments"
-            aria-label="管理环境"
-            title="管理环境"
-            :disabled="busy || loading"
-            @click="openEnvironments"
-          >
-            <Settings2 :size="16" />
-          </button>
         </div>
         <button
           class="master-control"
           :disabled="busy || loading"
           :aria-pressed="state.config.enabled"
           aria-label="请求注入总开关"
+          :title="
+            state.config.enabled
+              ? '注入已开启，点击暂停'
+              : '注入已暂停，点击开启'
+          "
           @click="toggleAll"
         >
-          <span>{{ state.config.enabled ? "注入已开启" : "注入已暂停" }}</span
+          <span v-if="!state.config.enabled" class="paused-label">已暂停</span
           ><span class="switch" :class="{ on: state.config.enabled }"
             ><span
           /></span>
         </button>
       </header>
-      <section
-        class="site-context"
-        :class="{ 'is-unavailable': !context }"
-        aria-label="当前网站"
-      >
-        <span class="site-icon"><Globe2 :size="19" /></span>
-        <div class="site-text">
-          <span class="context-label">{{
-            context ? "当前网站" : "打开网页后可管理网站 Cookie"
-          }}</span
-          ><strong :title="context?.url">{{
-            context?.host || "未选中网站"
-          }}</strong>
+      <div class="tab-workspace">
+        <div class="workspace-navigation">
+          <nav class="tab-bar" role="tablist" aria-label="配置类型">
+            <span
+              class="tab-indicator"
+              :style="{ transform: `translateX(${tabIndex * 100}%)` }"
+            />
+            <button
+              v-for="(item, index) in tabs"
+              :id="`tab-${item.id}`"
+              :key="item.id"
+              role="tab"
+              :aria-selected="tab === item.id"
+              :tabindex="tab === item.id ? 0 : -1"
+              :class="{ selected: tab === item.id }"
+              aria-controls="content-panel"
+              @keydown="tabKeydown($event, index)"
+              @click="changeTab(item.id)"
+            >
+              {{ item.name }}
+              <span v-if="tab === item.id" class="tab-count">{{
+                listCount
+              }}</span>
+            </button>
+          </nav>
         </div>
-        <span
-          v-if="context"
-          class="match-summary"
-          title="按当前页面 URL 计算匹配规则，不代表实际请求命中次数"
-          ><span
-            class="status-dot"
-            :class="{ muted: !matchedCount || state.syncError }"
-          />{{
-            state.syncError ? "规则应用异常" : `${matchedCount} 条匹配`
-          }}</span
+        <div v-if="error || state.syncError" class="error-banner" role="alert">
+          <Info :size="16" /><span>{{ error || state.syncError }}</span
+          ><button
+            class="icon-button"
+            aria-label="重新尝试"
+            @click="initialize"
+          >
+            <RefreshCw :size="15" />
+          </button>
+        </div>
+        <section
+          id="content-panel"
+          class="content-panel"
+          role="tabpanel"
+          :aria-labelledby="`tab-${tab}`"
+          :aria-busy="loading || (tab === 'site' && cookieLoading)"
         >
-      </section>
-      <nav class="tab-bar" role="tablist" aria-label="配置类型">
-        <span
-          class="tab-indicator"
-          :style="{ transform: `translateX(${tabIndex * 100}%)` }"
-        />
-        <button
-          v-for="(item, index) in tabs"
-          :id="`tab-${item.id}`"
-          :key="item.id"
-          role="tab"
-          :aria-selected="tab === item.id"
-          :tabindex="tab === item.id ? 0 : -1"
-          :class="{ selected: tab === item.id }"
-          aria-controls="content-panel"
-          @keydown="tabKeydown($event, index)"
-          @click="changeTab(item.id)"
-        >
-          {{ item.name }}
-        </button>
-      </nav>
-      <div v-if="error || state.syncError" class="error-banner" role="alert">
-        <Info :size="16" /><span>{{ error || state.syncError }}</span
-        ><button class="icon-button" aria-label="重新尝试" @click="initialize">
-          <RefreshCw :size="15" />
-        </button>
-      </div>
-      <section
-        id="content-panel"
-        class="content-panel"
-        role="tabpanel"
-        :aria-labelledby="`tab-${tab}`"
-      >
-        <div class="section-heading">
-          <div class="section-title">
+          <div class="section-title sr-only">
             <h2>
               {{
                 tab === "header"
@@ -704,353 +719,326 @@ onUnmounted(() => {
                     : "网站 Cookie"
               }}
             </h2>
-            <span class="count">{{ listCount }}</span>
           </div>
-          <div class="section-actions">
-            <button
-              class="text-button import-button"
-              :disabled="
+          <div class="workspace-toolbar">
+            <div class="rule-search-controls">
+              <label class="search-field"
+                ><Search :size="15" /><input
+                  v-model="query"
+                  aria-label="搜索配置"
+                  :placeholder="
+                    tab === 'site' ? '搜索 Cookie' : '搜索规则'
+                  " /><button
+                  v-if="query"
+                  class="clear-search"
+                  aria-label="清空搜索"
+                  @click="query = ''"
+                >
+                  <X :size="14" /></button
+              ></label>
+              <UiSelect
+                v-if="tab !== 'site'"
+                class="filter-select"
+                v-model="scopeFilter"
+                :options="filterOptions"
+                label="筛选规则范围"
+                :disabled="busy || loading"
+              />
+            </div>
+            <RuleActions
+              :site="tab === 'site'"
+              :disabled="busy || loading"
+              :add-disabled="tab === 'site' && !context"
+              :import-disabled="
                 busy ||
                 loading ||
                 (tab === 'site' && (!context || cookieLoading))
               "
-              @click="openTransfer('import')"
-            >
-              <Upload :size="14" />导入
-            </button>
-            <button
-              class="text-button export-button"
-              :disabled="
+              :export-disabled="
                 busy ||
                 loading ||
                 !listCount ||
                 (tab === 'site' && (!context || cookieLoading))
               "
-              @click="openTransfer('export')"
-            >
-              <Download :size="14" />导出
-            </button>
-            <button
-              class="primary-button compact add-button"
-              :disabled="busy || loading || (tab === 'site' && !context)"
-              @click="tab === 'site' ? openCookie() : openRule()"
-            >
-              <Plus :size="16" />{{
-                tab === "site" ? "写入 Cookie" : "添加规则"
-              }}
-            </button>
+              :refresh-disabled="
+                busy ||
+                loading ||
+                (tab === 'site' && (!context || cookieLoading))
+              "
+              @add="tab === 'site' ? openCookie() : openRule()"
+              @import="openTransfer('import')"
+              @export="openTransfer('export')"
+              @refresh="refresh"
+            />
           </div>
-        </div>
-        <p v-if="tab === 'cookie'" class="section-note">
-          <Info :size="15" />仅修改请求头，不会写入网站 Cookie。
-        </p>
-        <p v-if="tab === 'site'" class="section-note">
-          <Info :size="15" />实际存储在浏览器中，不受注入总开关影响。
-        </p>
-        <div class="filter-row">
-          <label class="search-field"
-            ><Search :size="15" /><input
-              v-model="query"
-              aria-label="搜索配置"
-              :placeholder="
-                tab === 'site' ? '搜索 Cookie' : '搜索名称、值或域名'
-              " /><button
-              v-if="query"
-              class="clear-search"
-              aria-label="清空搜索"
-              @click="query = ''"
-            >
-              <X :size="14" /></button
-          ></label>
-          <UiSelect
-            v-if="tab !== 'site'"
-            class="filter-select"
-            v-model="scopeFilter"
-            :options="filterOptions"
-            label="筛选规则范围"
-            :disabled="busy || loading"
-          />
-          <button
-            v-else
-            class="icon-button refresh-cookies"
-            aria-label="刷新 Cookie"
-            :disabled="busy || cookieLoading || !context"
-            @click="refresh"
-          >
-            <RefreshCw :size="16" :class="{ spinning: cookieLoading }" />
-          </button>
-        </div>
-        <div v-if="loading" class="empty-state" role="status">
-          <RefreshCw class="spinning" :size="24" />
-          <p>正在读取配置</p>
-        </div>
-        <div v-else-if="tab !== 'site'" class="rule-list">
-          <div v-if="!filteredRules.length" class="empty-state">
-            <span class="empty-symbol"><Settings2 :size="25" /></span>
-            <h3>
-              {{
-                query || scopeFilter === "current"
-                  ? "没有匹配的规则"
-                  : tab === "header"
-                    ? "添加第一条 Header 规则"
-                    : "添加第一条 Cookie 规则"
-              }}
-            </h3>
-            <p>
-              {{
-                query
-                  ? "试试其他关键词。"
-                  : scopeFilter === "current"
-                    ? "当前网站还没有匹配的配置。"
+          <p v-if="tab === 'cookie'" class="section-note">
+            <Info :size="15" />仅修改请求头，不会写入网站 Cookie。
+          </p>
+          <p v-if="tab === 'site'" class="section-note">
+            <Info :size="15" />浏览器 Cookie 不随环境切换，也不受注入开关影响。
+          </p>
+          <div v-if="loading" class="empty-state" role="status">
+            <RefreshCw class="spinning" :size="24" />
+            <p>正在读取配置</p>
+          </div>
+          <div v-else-if="tab !== 'site'" class="rule-list">
+            <div v-if="!filteredRules.length" class="empty-state">
+              <span class="empty-symbol"><Settings2 :size="25" /></span>
+              <h3>
+                {{
+                  query || scopeFilter === "current"
+                    ? "没有匹配的规则"
                     : tab === "header"
-                      ? "设置 Authorization 或自定义请求头。"
-                      : "为发出的请求替换或追加 Cookie。"
-              }}
-            </p>
-          </div>
-          <article
-            v-for="rule in filteredRules"
-            :key="rule.id"
-            class="rule-row request-rule-row"
-            :class="{ disabled: !rule.enabled || !state.config.enabled }"
-          >
-            <button
-              class="row-toggle"
-              :disabled="busy"
-              :aria-label="`${rule.enabled ? '停用' : '启用'} ${rule.key}`"
-              :aria-pressed="rule.enabled"
-              @click="toggleRule(rule)"
+                      ? "添加第一条 Header 规则"
+                      : "添加第一条 Cookie 规则"
+                }}
+              </h3>
+              <p>
+                {{
+                  query
+                    ? "试试其他关键词。"
+                    : scopeFilter === "current"
+                      ? "当前网站还没有匹配的配置。"
+                      : tab === "header"
+                        ? "设置 Authorization 或自定义请求头。"
+                        : "为发出的请求替换或追加 Cookie。"
+                }}
+              </p>
+            </div>
+            <article
+              v-for="rule in filteredRules"
+              :key="rule.id"
+              class="rule-row request-rule-row"
+              :class="{ disabled: !rule.enabled || !state.config.enabled }"
             >
-              <span class="switch small" :class="{ on: rule.enabled }"
-                ><span
-              /></span>
-            </button>
-            <div class="rule-content">
               <button
-                class="rule-details"
-                :aria-label="`编辑 ${rule.key}`"
-                @click="openRule(rule)"
+                class="row-toggle"
+                :disabled="busy"
+                :aria-label="`${rule.enabled ? '停用' : '启用'} ${rule.key}`"
+                :aria-pressed="rule.enabled"
+                @click="toggleRule(rule)"
               >
-                <span class="rule-name"
-                  >{{ rule.key
-                  }}<span
-                    v-if="rule.kind === 'cookie'"
-                    class="operation-label"
-                    >{{ rule.operation === "set" ? "替换整段" : "追加" }}</span
+                <span class="switch small" :class="{ on: rule.enabled }"
+                  ><span
+                /></span>
+              </button>
+              <div class="rule-content">
+                <button
+                  class="rule-details"
+                  :aria-label="`编辑 ${rule.key}`"
+                  @click="openRule(rule)"
+                >
+                  <span class="rule-name"
+                    >{{ rule.key
+                    }}<span
+                      v-if="rule.kind === 'cookie'"
+                      class="operation-label"
+                      >{{
+                        rule.operation === "set" ? "替换整段" : "追加"
+                      }}</span
+                    ></span
+                  >
+                  <span v-if="rule.kind !== 'header'" class="rule-value">{{
+                    isSensitive(rule) && !revealed.has(rule.id)
+                      ? "••••••••••••••••••••"
+                      : rule.value || "（空值）"
+                  }}</span>
+                </button>
+                <UiSelect
+                  v-if="rule.kind === 'header'"
+                  class="rule-value-picker"
+                  searchable
+                  :columns="{ label: '值', description: '别名' }"
+                  add-label="添加值"
+                  :add-disabled="(rule.values?.length || 1) >= 30"
+                  :model-value="rule.value"
+                  :options="valueOptions(rule)"
+                  :label="`切换 ${rule.key} 的值`"
+                  :disabled="busy && inlineSaving !== rule.id"
+                  :value-edit-disabled="
+                    isSensitive(rule) && !revealed.has(rule.id)
+                  "
+                  :save-option="(edit) => editRuleOption(rule, edit)"
+                  :remove-option="(value) => removeRuleOption(rule, value)"
+                  @update:model-value="changeRuleValue(rule, $event)"
+                  :add-option="(value) => addRuleOption(rule, value)"
+                />
+                <span class="rule-scope"
+                  ><Globe2 :size="12" /><span :title="scopeName(rule)">{{
+                    scopeName(rule)
+                  }}</span
+                  ><span
+                    v-if="
+                      context &&
+                      matching(rule) &&
+                      rule.enabled &&
+                      state.config.enabled &&
+                      !state.syncError
+                    "
+                    class="matched-label"
+                    >当前匹配</span
                   ></span
                 >
-                <span v-if="rule.kind !== 'header'" class="rule-value">{{
-                  isSensitive(rule) && !revealed.has(rule.id)
-                    ? "••••••••••••••••••••"
-                    : rule.value || "（空值）"
-                }}</span>
-              </button>
-              <UiSelect
-                v-if="rule.kind === 'header'"
-                class="rule-value-picker"
-                searchable
-                :columns="{ label: '值', description: '别名' }"
-                add-label="添加值"
-                :add-disabled="(rule.values?.length || 1) >= 30"
-                :model-value="rule.value"
-                :options="valueOptions(rule)"
-                :label="`切换 ${rule.key} 的值`"
-                :disabled="busy"
-                @update:model-value="changeRuleValue(rule, $event)"
-                @add="openQuickValue(rule)"
-              />
-              <span class="rule-scope"
-                ><Globe2 :size="12" /><span :title="scopeName(rule)">{{
-                  scopeName(rule)
-                }}</span
-                ><span
-                  v-if="
-                    context &&
-                    matching(rule) &&
-                    rule.enabled &&
-                    state.config.enabled &&
-                    !state.syncError
+              </div>
+              <div class="row-actions">
+                <button
+                  class="icon-button"
+                  :aria-label="`编辑规则 ${rule.key}`"
+                  title="编辑规则"
+                  @click="openRule(rule)"
+                >
+                  <Pencil :size="15" /></button
+                ><button
+                  v-if="isSensitive(rule)"
+                  class="icon-button"
+                  :aria-label="`${revealed.has(rule.id) ? '隐藏' : '显示'} ${rule.key} 的值`"
+                  @click="toggleReveal(rule.id)"
+                >
+                  <EyeOff v-if="revealed.has(rule.id)" :size="16" /><Eye
+                    v-else
+                    :size="16"
+                  /></button
+                ><button
+                  class="icon-button delete-icon"
+                  :aria-label="`删除 ${rule.key}`"
+                  @click="
+                    confirmDelete = confirmDelete === rule.id ? '' : rule.id
                   "
-                  class="matched-label"
-                  >当前匹配</span
-                ></span
-              >
-            </div>
-            <div class="row-actions">
-              <button
-                class="icon-button"
-                :aria-label="`编辑规则 ${rule.key}`"
-                title="编辑规则"
-                @click="openRule(rule)"
-              >
-                <Pencil :size="15" /></button
-              ><button
-                v-if="isSensitive(rule)"
-                class="icon-button"
-                :aria-label="`${revealed.has(rule.id) ? '隐藏' : '显示'} ${rule.key} 的值`"
-                @click="toggleReveal(rule.id)"
-              >
-                <EyeOff v-if="revealed.has(rule.id)" :size="16" /><Eye
-                  v-else
-                  :size="16"
-                /></button
-              ><button
-                class="icon-button delete-icon"
-                :aria-label="`删除 ${rule.key}`"
-                @click="
-                  confirmDelete = confirmDelete === rule.id ? '' : rule.id
-                "
-              >
-                <Trash2 :size="15" />
-              </button>
-            </div>
-            <div v-if="confirmDelete === rule.id" class="delete-confirm">
-              <span>删除这条规则？</span
-              ><button
-                class="text-button"
-                :disabled="busy"
-                @click="confirmDelete = ''"
-              >
-                取消</button
-              ><button
-                class="danger-button"
-                :disabled="busy"
-                @click="deleteRule(rule)"
-              >
-                删除
-              </button>
-            </div>
-          </article>
-        </div>
-        <div v-else class="rule-list cookie-list">
-          <div v-if="!context || !filteredCookies.length" class="empty-state">
-            <span class="empty-symbol"><Cookie :size="26" /></span>
-            <h3>
-              {{
-                !context
-                  ? "先打开一个网站"
-                  : query
-                    ? "没有匹配的 Cookie"
-                    : "这个网站没有 Cookie"
-              }}
-            </h3>
-            <p>
-              {{
-                !context
-                  ? "支持 HTTP 和 HTTPS 页面。"
-                  : query
-                    ? "试试其他名称或域名。"
-                    : "可以手动写入需要的 Cookie。"
-              }}
-            </p>
+                >
+                  <Trash2 :size="15" />
+                </button>
+              </div>
+              <div v-if="confirmDelete === rule.id" class="delete-confirm">
+                <span>删除这条规则？</span
+                ><button
+                  class="text-button"
+                  :disabled="busy"
+                  @click="confirmDelete = ''"
+                >
+                  取消</button
+                ><button
+                  class="danger-button"
+                  :disabled="busy"
+                  @click="deleteRule(rule)"
+                >
+                  删除
+                </button>
+              </div>
+            </article>
           </div>
-          <article
-            v-for="cookie in filteredCookies"
-            :key="siteCookieId(cookie)"
-            class="rule-row site-cookie-row"
-          >
-            <span class="cookie-row-symbol"
-              ><Cookie :size="18" :stroke-width="1.5"
-            /></span>
-            <button
-              class="rule-content"
-              :aria-label="`编辑 Cookie ${cookie.name}`"
-              @click="openCookie(cookie)"
+          <div v-else class="rule-list cookie-list">
+            <div v-if="!context || !filteredCookies.length" class="empty-state">
+              <span class="empty-symbol"><Cookie :size="26" /></span>
+              <h3>
+                {{
+                  !context
+                    ? "先打开一个网站"
+                    : query
+                      ? "没有匹配的 Cookie"
+                      : "这个网站没有 Cookie"
+                }}
+              </h3>
+              <p>
+                {{
+                  !context
+                    ? "支持 HTTP 和 HTTPS 页面。"
+                    : query
+                      ? "试试其他名称或域名。"
+                      : "可以手动写入需要的 Cookie。"
+                }}
+              </p>
+            </div>
+            <article
+              v-for="cookie in filteredCookies"
+              :key="siteCookieId(cookie)"
+              class="rule-row site-cookie-row"
             >
-              <span class="rule-name"
-                >{{ cookie.name
-                }}<LockKeyhole
-                  v-if="cookie.httpOnly"
-                  :size="12"
-                  aria-label="HttpOnly" /></span
-              ><span class="rule-value">{{
-                revealed.has(siteCookieId(cookie))
-                  ? cookie.value || "（空值）"
-                  : "••••••••••••••••"
-              }}</span
-              ><span class="rule-scope"
-                ><span :title="`${cookie.domain}${cookie.path}`"
-                  >{{ cookie.domain }}{{ cookie.path }}</span
-                ><span class="cookie-flag"
-                  >{{ cookie.session ? "会话" : "持久"
-                  }}{{ cookie.partitionKey ? " · 分区" : "" }}</span
-                ></span
-              >
-            </button>
-            <div class="row-actions">
+              <span class="cookie-row-symbol"
+                ><Cookie :size="18" :stroke-width="1.5"
+              /></span>
               <button
-                class="icon-button"
-                :aria-label="`编辑网站 Cookie ${cookie.name}`"
-                title="编辑 Cookie"
+                class="rule-content"
+                :aria-label="`编辑 Cookie ${cookie.name}`"
                 @click="openCookie(cookie)"
               >
-                <Pencil :size="15" /></button
-              ><button
-                class="icon-button"
-                :aria-label="`${revealed.has(siteCookieId(cookie)) ? '隐藏' : '显示'} Cookie ${cookie.name} 的值`"
-                @click="toggleReveal(siteCookieId(cookie))"
-              >
-                <EyeOff
-                  v-if="revealed.has(siteCookieId(cookie))"
-                  :size="16"
-                /><Eye v-else :size="16" /></button
-              ><button
-                class="icon-button delete-icon"
-                :aria-label="`删除 Cookie ${cookie.name}`"
-                @click="
-                  confirmDelete =
-                    confirmDelete === siteCookieId(cookie)
-                      ? ''
-                      : siteCookieId(cookie)
-                "
-              >
-                <Trash2 :size="15" />
+                <span class="cookie-heading">
+                  <span class="rule-name cookie-name" :title="cookie.name">{{
+                    cookie.name
+                  }}</span>
+                  <LockKeyhole
+                    v-if="cookie.httpOnly"
+                    :size="12"
+                    aria-label="HttpOnly"
+                  />
+                  <span class="cookie-flag"
+                    >{{ cookie.session ? "会话" : "持久"
+                    }}{{ cookie.partitionKey ? " · 分区" : "" }}</span
+                  >
+                </span>
+                <span class="rule-value">{{
+                  revealed.has(siteCookieId(cookie))
+                    ? cookie.value || "（空值）"
+                    : "••••••••••••••••"
+                }}</span
+                ><span class="rule-scope"
+                  ><span :title="`${cookie.domain}${cookie.path}`"
+                    >{{ cookie.domain }}{{ cookie.path }}</span
+                  ></span
+                >
               </button>
-            </div>
-            <div
-              v-if="confirmDelete === siteCookieId(cookie)"
-              class="delete-confirm"
-            >
-              <span>从浏览器删除？</span
-              ><button
-                class="text-button"
-                :disabled="busy"
-                @click="confirmDelete = ''"
+              <div class="row-actions">
+                <button
+                  class="icon-button"
+                  :aria-label="`编辑网站 Cookie ${cookie.name}`"
+                  title="编辑 Cookie"
+                  @click="openCookie(cookie)"
+                >
+                  <Pencil :size="15" /></button
+                ><button
+                  class="icon-button"
+                  :aria-label="`${revealed.has(siteCookieId(cookie)) ? '隐藏' : '显示'} Cookie ${cookie.name} 的值`"
+                  @click="toggleReveal(siteCookieId(cookie))"
+                >
+                  <EyeOff
+                    v-if="revealed.has(siteCookieId(cookie))"
+                    :size="16"
+                  /><Eye v-else :size="16" /></button
+                ><button
+                  class="icon-button delete-icon"
+                  :aria-label="`删除 Cookie ${cookie.name}`"
+                  @click="
+                    confirmDelete =
+                      confirmDelete === siteCookieId(cookie)
+                        ? ''
+                        : siteCookieId(cookie)
+                  "
+                >
+                  <Trash2 :size="15" />
+                </button>
+              </div>
+              <div
+                v-if="confirmDelete === siteCookieId(cookie)"
+                class="delete-confirm"
               >
-                取消</button
-              ><button
-                class="danger-button"
-                :disabled="busy"
-                @click="deleteCookie(cookie)"
-              >
-                删除
-              </button>
-            </div>
-          </article>
-        </div>
-      </section>
-      <footer class="app-footer">
-        <span class="footer-status"
-          ><span
-            class="status-dot"
-            :class="{ muted: !state.config.enabled || !!state.syncError }"
-          />{{
-            state.syncError
-              ? "规则应用异常"
-              : state.config.enabled
-                ? `${enabledCount} 条注入规则已加载`
-                : "请求注入已暂停"
-          }}</span
-        ><button
-          class="text-button footer-sync"
-          :disabled="busy || loading"
-          @click="refresh"
-        >
-          <RefreshCw :size="13" />{{
-            tab === "site" ? "重新读取" : "重新应用规则"
-          }}
-        </button>
-      </footer>
+                <span>从浏览器删除？</span
+                ><button
+                  class="text-button"
+                  :disabled="busy"
+                  @click="confirmDelete = ''"
+                >
+                  取消</button
+                ><button
+                  class="danger-button"
+                  :disabled="busy"
+                  @click="deleteCookie(cookie)"
+                >
+                  删除
+                </button>
+              </div>
+            </article>
+          </div>
+        </section>
+      </div>
     </div>
     <Transition name="toast"
       ><div v-if="notice" class="toast" role="status">
@@ -1080,11 +1068,9 @@ onUnmounted(() => {
                 ? `${transferMode === "import" ? "批量导入" : "导出"}${transferTarget === "header" ? " Header" : transferTarget === "cookie" ? "请求 Cookie" : "网站 Cookie"}`
                 : editor === "environments"
                   ? "管理环境"
-                  : editor === "value"
-                    ? "添加候选值"
-                    : editor === "rule"
-                      ? `${form.id ? "编辑" : "添加"}${form.kind === "header" ? " Header" : "请求 Cookie"}`
-                      : `${cookieForm.original ? "编辑" : "写入"}网站 Cookie`
+                  : editor === "rule"
+                    ? `${form.id ? "编辑" : "添加"}${form.kind === "header" ? " Header" : "请求 Cookie"}`
+                    : `${cookieForm.original ? "编辑" : "写入"}网站 Cookie`
             }}
           </h2>
           <button
@@ -1120,38 +1106,7 @@ onUnmounted(() => {
           class="editor-body"
           @submit.prevent="save"
         >
-          <template v-if="editor === 'value'">
-            <div class="quick-value-context">
-              <span>Header</span><strong>{{ quickValue.key }}</strong>
-            </div>
-            <div class="field">
-              <label for="quick-value"
-                >Header 值<span class="optional">允许空值</span></label
-              >
-              <textarea
-                id="quick-value"
-                v-model="quickValue.value"
-                :disabled="busy"
-                rows="3"
-                placeholder="输入需要注入的值"
-                spellcheck="false"
-              />
-            </div>
-            <div class="field">
-              <label for="quick-alias"
-                >别名<span class="optional">选填</span></label
-              >
-              <input
-                id="quick-alias"
-                v-model="quickValue.alias"
-                :disabled="busy"
-                maxlength="48"
-                placeholder="如：测试环境、预发布、生产"
-                autocomplete="off"
-              />
-            </div>
-          </template>
-          <template v-else-if="editor === 'rule'">
+          <template v-if="editor === 'rule'">
             <div class="field">
               <label for="rule-key">{{
                 form.kind === "header" ? "Header 名称" : "请求头名称"
@@ -1456,13 +1411,7 @@ onUnmounted(() => {
               v-else
               :size="16"
             />{{
-              busy
-                ? "正在保存"
-                : editor === "value"
-                  ? "添加并使用"
-                  : editor === "site"
-                    ? "写入 Cookie"
-                    : "保存规则"
+              busy ? "正在保存" : editor === "site" ? "写入 Cookie" : "保存规则"
             }}
           </button>
         </footer>

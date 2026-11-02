@@ -279,6 +279,22 @@ try {
     );
     await idle();
   }
+  async function saveAdded() {
+    await click(".select-create-save");
+    await until(
+      () =>
+        evaluate(
+          popup,
+          "!document.querySelector('.select-create') && !!document.querySelector('.select-editable')",
+        ),
+      "candidate added inside menu",
+    );
+    await idle();
+    assert.equal(
+      await evaluate(popup, "!!document.querySelector('.editor')"),
+      false,
+    );
+  }
   const row = ".rule-row";
   await click(".add-button");
   await until(
@@ -477,18 +493,18 @@ try {
   await menu(".rule-value-picker button");
   await click(".select-add");
   await until(
-    () => evaluate(popup, '!!document.querySelector("#quick-value")'),
+    () => evaluate(popup, "!!document.querySelector('.select-create-value')"),
     "quick add editor",
   );
-  await fill("#quick-value", "831");
-  await fill("#quick-alias", "生产");
+  await fill(".select-create-value", "831");
+  await fill(".select-create-fields label:nth-child(2) input", "生产");
   await snapshot("quick-add");
-  await saveEditor();
+  await saveAdded();
   assert.equal((await echo())["pversion-id"], "831");
   assert.equal(
     await evaluate(
       popup,
-      "document.activeElement.classList.contains('select-trigger')",
+      "document.activeElement.matches('.select-search input')",
     ),
     true,
   );
@@ -508,6 +524,7 @@ try {
   passed(
     "footer quick-add persists alias and immediately applies the new Header value",
   );
+  await key("Escape");
 
   await click('.row-actions button[title="编辑规则"]');
   await until(
@@ -541,10 +558,7 @@ try {
   await cdp("Target.activateTarget", { targetId: blankId });
   await reloadPopup();
   assert.equal(
-    await evaluate(
-      popup,
-      "!!document.querySelector('.site-context.is-unavailable')",
-    ),
+    await evaluate(popup, "!document.querySelector('.site-context')"),
     true,
   );
   await menu(".rule-value-picker button");
@@ -557,6 +571,43 @@ try {
     ["测试环境", "预发布", "生产"],
   );
   await key("Escape");
+  await click("#tab-site");
+  await until(
+    () =>
+      evaluate(
+        popup,
+        "document.querySelector('#content-panel').getAttribute('aria-busy')==='false' && document.querySelector('.add-button').disabled && document.querySelector('.action-menu-trigger').disabled",
+      ),
+    "all website Cookie actions disabled without a website",
+  );
+  await click(".action-menu-trigger");
+  await evaluate(
+    popup,
+    "document.querySelector('.action-menu-trigger').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}))",
+  );
+  assert.equal(
+    await evaluate(popup, "!!document.querySelector('.action-menu')"),
+    false,
+  );
+  assert.equal(
+    await evaluate(
+      popup,
+      "getComputedStyle(document.querySelector('.add-button')).opacity === getComputedStyle(document.querySelector('.action-menu-trigger')).opacity",
+    ),
+    true,
+  );
+  await snapshot("no-site-actions-disabled");
+  await click("#tab-header");
+  assert.equal(
+    await evaluate(
+      popup,
+      "document.querySelector('.action-menu-trigger').disabled",
+    ),
+    false,
+  );
+  passed(
+    "website Cookie split button is consistently disabled without a website; click and keyboard cannot open an empty menu",
+  );
   await cdp("Target.activateTarget", { targetId: fixtureId });
   await cdp("Target.closeTarget", { targetId: blankId });
   await reloadPopup();
@@ -608,29 +659,33 @@ try {
   );
   await key("Enter");
   await until(
-    () => evaluate(popup, '!!document.querySelector("#quick-value")'),
+    () => evaluate(popup, "!!document.querySelector('.select-create-value')"),
     "keyboard quick add",
   );
-  await fill("#quick-value", "831");
-  await fill("#quick-alias", "重复环境");
-  await click('button[form="config-form"]');
+  await fill(".select-create-value", "831");
+  await fill(".select-create-fields label:nth-child(2) input", "重复环境");
+  await click(".select-create-save");
   await until(
     () =>
       evaluate(
         popup,
-        'document.querySelector(".editor-error")?.textContent.includes("重复")',
+        'document.querySelector(".select-create-error")?.textContent.includes("重复")',
       ),
     "duplicate quick-add rejected",
   );
   assert.equal(
-    await evaluate(popup, "document.querySelector('#quick-alias').value"),
+    await evaluate(
+      popup,
+      "document.querySelector('.select-create-fields label:nth-child(2) input').value",
+    ),
     "重复环境",
   );
   assert.equal((await echo())["pversion-id"], "899");
-  await fill("#quick-value", "833");
-  await fill("#quick-alias", "联调");
-  await saveEditor();
+  await fill(".select-create-value", "833");
+  await fill(".select-create-fields label:nth-child(2) input", "联调");
+  await saveAdded();
   assert.equal((await echo())["pversion-id"], "833");
+  await key("Escape");
   passed(
     "no-results menu retains keyboard add action; invalid save preserves inputs and previous network value",
   );
@@ -644,18 +699,18 @@ try {
   await menu(".rule-value-picker button");
   await click(".select-add");
   await until(
-    () => evaluate(popup, '!!document.querySelector("#quick-value")'),
+    () => evaluate(popup, "!!document.querySelector('.select-create-value')"),
     "concurrent editor",
   );
-  await fill("#quick-value", "835");
-  await fill("#quick-alias", "新环境");
+  await fill(".select-create-value", "835");
+  await fill(".select-create-fields label:nth-child(2) input", "新环境");
   await message("ADD_RULE_VALUE", {
     id,
     environmentId: "default",
     value: "834",
     alias: "并发新增",
   });
-  await saveEditor();
+  await saveAdded();
   state = await message("STATE");
   assert.deepEqual(state.config.rules[0].values.slice(-2), ["834", "835"]);
   assert.deepEqual(state.config.rules[0].valueAliases.slice(-2), [
@@ -665,6 +720,101 @@ try {
   assert.equal((await echo())["pversion-id"], "835");
   passed(
     "main search includes aliases; quick-add merges with candidates added concurrently",
+  );
+
+  await key("Escape");
+
+  await menu(".rule-value-picker button");
+  await fill(".select-search input", "暂不新增");
+  await click(".select-add");
+  await until(
+    () => evaluate(popup, "!!document.querySelector('.select-create-value')"),
+    "add form inside menu",
+  );
+  assert.equal(
+    await evaluate(popup, "!!document.querySelector('.editor')"),
+    false,
+  );
+  await fill(".select-create-value", "cancelled");
+  await key("Escape");
+  await until(
+    () =>
+      evaluate(
+        popup,
+        "!document.querySelector('.select-create') && !!document.querySelector('.select-editable')",
+      ),
+    "Escape cancels add without closing menu",
+  );
+  assert.equal(
+    await evaluate(
+      popup,
+      "document.querySelector('.select-search input').value",
+    ),
+    "暂不新增",
+  );
+  assert.equal((await echo())["pversion-id"], "835");
+  await click(".select-add");
+  await until(
+    () => evaluate(popup, "!!document.querySelector('.select-create-value')"),
+    "reopen empty add draft",
+  );
+  assert.equal(
+    await evaluate(
+      popup,
+      "document.querySelector('.select-create-value').value",
+    ),
+    "",
+  );
+  await click(".select-create-actions .secondary-button");
+  await key("Escape");
+  passed(
+    "inline add cancels without changing selection, preserves search, and starts a clean draft next time",
+  );
+
+  await cdp(
+    "Emulation.setDeviceMetricsOverride",
+    { width: 480, height: 400, deviceScaleFactor: 1, mobile: false },
+    popup,
+  );
+  await menu(".rule-value-picker button");
+  await click(".select-add");
+  await until(
+    () => evaluate(popup, "!!document.querySelector('.select-create-value')"),
+    "short inline add",
+  );
+  await snapshot("inline-add-short");
+  assert.equal(
+    await evaluate(
+      popup,
+      `(() => {
+    const save = document.querySelector('.select-create-save').getBoundingClientRect();
+    const input = document.querySelector('.select-create-value').getBoundingClientRect();
+    return input.top >= 0 && save.bottom <= innerHeight && save.right <= innerWidth;
+  })()`,
+    ),
+    true,
+  );
+  await fill(".select-create-value", "836");
+  await fill(".select-create-fields label:nth-child(2) input", "短窗联调");
+  await key("Enter");
+  await until(
+    () =>
+      evaluate(
+        popup,
+        "!document.querySelector('.select-create') && !!document.querySelector('.select-editable')",
+      ),
+    "Enter adds in short menu",
+  );
+  await idle();
+  assert.equal((await echo())["pversion-id"], "836");
+  await key("Escape");
+  await cdp(
+    "Emulation.setDeviceMetricsOverride",
+    { width: 480, height: 600, deviceScaleFactor: 1, mobile: false },
+    popup,
+  );
+  passed(
+    "short popup keeps inline add fields and actions visible; Enter saves and applies without navigation",
   );
 
   await message("SAVE_RULE", {
@@ -758,6 +908,412 @@ try {
   await snapshot("short-editor");
   passed(
     "value menu stays inside short viewport and editor save footer remains visible",
+  );
+
+  await click('[aria-label="关闭编辑"]');
+  await until(
+    () => evaluate(popup, '!document.querySelector(".editor")'),
+    "close short editor",
+  );
+  await cdp(
+    "Emulation.setDeviceMetricsOverride",
+    { width: 480, height: 600, deviceScaleFactor: 1, mobile: false },
+    popup,
+  );
+  await message("SAVE_RULE", {
+    ...(await message("STATE")).config.rules.find((r) => r.id === id),
+    value: "898",
+    values: ["898", "831", "231"],
+    valueAliases: ["测试", "", "生产"],
+    enabled: true,
+  });
+  await reloadPopup();
+  async function editCell(index, field) {
+    await click(
+      `.select-option:nth-child(${index}) .select-cell-edit[data-option-action="${field}"]`,
+    );
+    await until(
+      () =>
+        evaluate(
+          popup,
+          `!!document.querySelector('input[aria-label="${field === "value" ? "编辑候选值" : "编辑别名"}"]')`,
+        ),
+      "inline editor",
+    );
+    assert.equal(
+      await evaluate(popup, "!!document.querySelector('.editor')"),
+      false,
+    );
+  }
+  async function inlineSaved() {
+    await until(
+      () =>
+        evaluate(
+          popup,
+          "!document.querySelector('.select-inline-input') && !!document.querySelector('.select-editable')",
+        ),
+      "inline save keeps menu open",
+    );
+    await idle();
+  }
+  await menu(".rule-value-picker button");
+  const textCell = ".select-option:nth-child(1) .select-option-label > span";
+  const cellCenter = await evaluate(
+    popup,
+    `(() => {
+    const r = document.querySelector(${JSON.stringify(textCell)}).getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  })()`,
+  );
+  await cdp(
+    "Input.dispatchMouseEvent",
+    { type: "mouseMoved", ...cellCenter },
+    popup,
+  );
+  assert.equal(
+    await evaluate(popup, "!!document.querySelector('.select-inline-input')"),
+    false,
+  );
+  assert.deepEqual(
+    await evaluate(
+      popup,
+      `(() => {
+    const cell = document.querySelector('.select-option-label.select-cell');
+    const style = getComputedStyle(cell);
+    return { background: style.backgroundColor, shadow: style.boxShadow };
+  })()`,
+    ),
+    { background: "rgba(0, 0, 0, 0)", shadow: "none" },
+  );
+  await click(textCell);
+  await until(
+    () => evaluate(popup, "!document.querySelector('.select-editable')"),
+    "text selects without entering edit",
+  );
+  assert.equal(
+    await evaluate(
+      popup,
+      "!!document.querySelector('.select-inline-input') || !!document.querySelector('.editor')",
+    ),
+    false,
+  );
+  assert.equal(
+    (await message("STATE")).config.rules.find((r) => r.id === id).value,
+    "898",
+  );
+  passed(
+    "candidate text stays plain on hover and selects; only pencil controls enter editing",
+  );
+  await menu(".rule-value-picker button");
+  await editCell(2, "value");
+  await fill(".select-inline-input", "832");
+  await snapshot("inline-value-edit");
+  await click(".select-inline-save");
+  await inlineSaved();
+  assert.equal((await echo())["pversion-id"], "898");
+  assert.deepEqual(
+    (await message("STATE")).config.rules.find((r) => r.id === id).values,
+    ["898", "832", "231"],
+  );
+  passed(
+    "inline non-current value edits keep the menu open and preserve actual injected value",
+  );
+
+  await editCell(2, "alias");
+  await fill(".select-inline-input", "灰度环境");
+  await snapshot("inline-alias-edit");
+  await key("Enter");
+  await inlineSaved();
+  assert.deepEqual(
+    (await message("STATE")).config.rules.find((r) => r.id === id).valueAliases,
+    ["测试", "灰度环境", "生产"],
+  );
+  await snapshot("inline-alias-saved");
+  await key("Escape");
+  await reloadPopup();
+  await menu(".rule-value-picker button");
+  assert.match(
+    await evaluate(
+      popup,
+      "document.querySelector('.select-option:nth-child(2) .select-option-description').textContent",
+    ),
+    /灰度环境/,
+  );
+  passed(
+    "inline alias edits save with Enter and survive reopening without changing the current candidate",
+  );
+
+  await editCell(1, "value");
+  await fill(".select-inline-input", "899");
+  await key("Enter");
+  await inlineSaved();
+  assert.equal((await echo())["pversion-id"], "899");
+  assert.equal(
+    (await message("STATE")).config.rules.find((r) => r.id === id).value,
+    "899",
+  );
+  passed(
+    "editing the current candidate immediately changes subsequent real network requests",
+  );
+
+  await editCell(2, "value");
+  await fill(".select-inline-input", "899");
+  await click(".select-inline-save");
+  await until(
+    () =>
+      evaluate(
+        popup,
+        "document.querySelector('.select-edit-error')?.textContent.includes('重复')",
+      ),
+    "duplicate inline value rejected",
+  );
+  assert.equal(
+    await evaluate(
+      popup,
+      "document.querySelector('.select-inline-input').value",
+    ),
+    "899",
+  );
+  assert.equal((await echo())["pversion-id"], "899");
+  await snapshot("inline-duplicate-error");
+  await fill(".select-inline-input", "833");
+  await click(".select-inline-save");
+  await inlineSaved();
+  assert.deepEqual(
+    (await message("STATE")).config.rules.find((r) => r.id === id).values,
+    ["899", "833", "231"],
+  );
+  passed(
+    "invalid inline save retains input and network state; correcting it succeeds in place",
+  );
+
+  await editCell(2, "alias");
+  await fill(".select-inline-input", "不保存");
+  await key("Escape");
+  await until(
+    () => evaluate(popup, '!document.querySelector(".select-inline-input")'),
+    "Escape cancels only inline draft",
+  );
+  assert.equal(
+    await evaluate(popup, '!!document.querySelector(".select-editable")'),
+    true,
+  );
+  assert.equal(
+    (await message("STATE")).config.rules.find((r) => r.id === id)
+      .valueAliases[1],
+    "灰度环境",
+  );
+  await editCell(2, "alias");
+  await fill(".select-inline-input", "我的备注");
+  const concurrent = (await message("STATE")).config.rules.find(
+    (r) => r.id === id,
+  );
+  await message("SAVE_RULE", {
+    ...concurrent,
+    valueAliases: ["测试", "并发备注", "生产"],
+    includeSubdomains: !concurrent.includeSubdomains,
+  });
+  await click(".select-inline-save");
+  await until(
+    () =>
+      evaluate(
+        popup,
+        "document.querySelector('.select-edit-error')?.textContent.includes('别名已变化')",
+      ),
+    "stale alias rejected",
+  );
+  assert.equal(
+    await evaluate(
+      popup,
+      "document.querySelector('.select-inline-input').value",
+    ),
+    "我的备注",
+  );
+  assert.equal(
+    (await message("STATE")).config.rules.find((r) => r.id === id)
+      .valueAliases[1],
+    "并发备注",
+  );
+  await click('[aria-label="取消修改"]');
+  await key("Escape");
+  passed(
+    "Escape cancels drafts and stale inline aliases cannot overwrite concurrent changes",
+  );
+
+  await reloadPopup();
+  await click(".master-control");
+  await idle();
+  await menu(".rule-value-picker button");
+  await editCell(1, "value");
+  await fill(".select-inline-input", "900");
+  await click(".select-inline-save");
+  await inlineSaved();
+  assert.equal((await message("STATE")).config.enabled, false);
+  assert.equal(
+    (await message("STATE")).config.rules.find((r) => r.id === id).value,
+    "900",
+  );
+  assert.equal((await echo())["pversion-id"], undefined);
+  await key("Escape");
+  await click(".master-control");
+  await idle();
+  assert.equal((await echo())["pversion-id"], "900");
+  passed(
+    "inline save while paused preserves pause and applies the edited value only after resuming",
+  );
+
+  await cdp(
+    "Emulation.setDeviceMetricsOverride",
+    { width: 480, height: 400, deviceScaleFactor: 1, mobile: false },
+    popup,
+  );
+  await menu(".rule-value-picker button");
+  await editCell(1, "alias");
+  await snapshot("inline-short-menu");
+  assert.equal(
+    await evaluate(
+      popup,
+      "document.querySelector('.select-edit-actions').getBoundingClientRect().bottom <= innerHeight && document.querySelector('.select-edit-actions').getBoundingClientRect().top >= 0",
+    ),
+    true,
+  );
+  await key("Escape");
+  await key("Escape");
+  passed(
+    "inline editing keeps save and cancel controls visible in a short popup",
+  );
+
+  await cdp(
+    "Emulation.setDeviceMetricsOverride",
+    { width: 480, height: 600, deviceScaleFactor: 1, mobile: false },
+    popup,
+  );
+  const deleteFixture = (await message("STATE")).config.rules.find(
+    (r) => r.id === id,
+  );
+  await message("SAVE_RULE", {
+    ...deleteFixture,
+    value: "",
+    values: ["898", "231", "831", ""],
+    valueAliases: ["城代测试", "姚明浩联调环境", "自己的环境", ""],
+  });
+  await reloadPopup();
+  await menu(".rule-value-picker button");
+  await click(".select-option:nth-child(4) .select-delete");
+  await until(
+    () => evaluate(popup, "!!document.querySelector('.select-remove-confirm')"),
+    "confirm candidate deletion",
+  );
+  assert.match(
+    await evaluate(
+      popup,
+      "document.querySelector('.select-remove-confirm').textContent",
+    ),
+    /首个剩余值/,
+  );
+  await snapshot("delete-current-confirm");
+  await key("Escape");
+  await until(
+    () => evaluate(popup, "!document.querySelector('.select-remove-confirm')"),
+    "cancel deletion",
+  );
+  assert.equal(
+    (await message("STATE")).config.rules.find((r) => r.id === id).value,
+    "",
+  );
+  assert.equal(
+    await evaluate(popup, "!!document.querySelector('.select-editable')"),
+    true,
+  );
+  await click(".select-option:nth-child(4) .select-delete");
+  await click(".select-remove-save");
+  await until(
+    () =>
+      evaluate(
+        popup,
+        "!document.querySelector('.select-remove-confirm') && document.querySelectorAll('.select-option').length === 3",
+      ),
+    "empty candidate removed",
+  );
+  await idle();
+  assert.equal((await echo())["pversion-id"], "898");
+  assert.deepEqual(
+    (await message("STATE")).config.rules.find((r) => r.id === id).valueAliases,
+    ["城代测试", "姚明浩联调环境", "自己的环境"],
+  );
+  await snapshot("delete-current-done");
+  passed(
+    "deleting the current empty candidate confirms, supports cancel, selects first remaining value and updates real requests",
+  );
+
+  await fill(".select-search input", "姚明浩");
+  await click(".select-option .select-delete");
+  await click(".select-remove-save");
+  await until(
+    () =>
+      evaluate(
+        popup,
+        "!document.querySelector('.select-remove-confirm') && !!document.querySelector('.select-empty')",
+      ),
+    "noncurrent candidate deleted from search",
+  );
+  await idle();
+  assert.equal((await echo())["pversion-id"], "898");
+  assert.equal(
+    await evaluate(
+      popup,
+      "document.querySelector('.select-search input').value",
+    ),
+    "姚明浩",
+  );
+  await key("Escape");
+  await reloadPopup();
+  assert.deepEqual(
+    (await message("STATE")).config.rules.find((r) => r.id === id).values,
+    ["898", "831"],
+  );
+  passed(
+    "deleting a noncurrent candidate preserves selection/search and persists after reopening",
+  );
+
+  await menu(".rule-value-picker button");
+  await click(".select-option:nth-child(2) .select-delete");
+  await message("REMOVE_RULE_VALUE", {
+    id,
+    environmentId: "default",
+    value: "831",
+  });
+  await click(".select-remove-save");
+  await until(
+    () =>
+      evaluate(
+        popup,
+        "document.querySelector('.select-remove-confirm .select-create-error')?.textContent.includes('候选值已变化')",
+      ),
+    "stale deletion rejected",
+  );
+  assert.equal((await echo())["pversion-id"], "898");
+  await snapshot("delete-stale-error");
+  await key("Escape");
+  await key("Escape");
+  await reloadPopup();
+  await menu(".rule-value-picker button");
+  assert.equal(
+    await evaluate(popup, "document.querySelector('.select-delete').disabled"),
+    true,
+  );
+  await assert.rejects(
+    message("REMOVE_RULE_VALUE", {
+      id,
+      environmentId: "default",
+      value: "898",
+    }),
+    /至少保留/,
+  );
+  assert.equal((await echo())["pversion-id"], "898");
+  await key("Escape");
+  passed(
+    "stale candidate deletion cannot change current state and both UI and background protect the last value",
   );
 
   await writeFile(

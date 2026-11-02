@@ -141,6 +141,74 @@ export function addRuleValue(
   Object.assign(rule, next);
   return config;
 }
+/** Remove only the target candidate from the latest rule. */
+export function removeRuleValue(
+  config: Config,
+  input: { id: string; environmentId: string; value: string },
+): Config {
+  if (!input || input.environmentId !== config.activeEnvironmentId)
+    throw new Error("环境已切换，请刷新后重试");
+  const rule = activeRules(config).find((r) => r.id === input.id);
+  if (!rule || rule.kind !== "header" || typeof input.value !== "string")
+    throw new Error("规则已变化，请刷新后重试");
+  const values = [...(rule.values || [rule.value])];
+  const index = values.indexOf(input.value);
+  if (index < 0) throw new Error("候选值已变化，请刷新后重试");
+  if (values.length === 1) throw new Error("至少保留一个候选值");
+  const aliases = rule.valueAliases ? [...rule.valueAliases] : undefined;
+  values.splice(index, 1);
+  aliases?.splice(index, 1);
+  const next = validateRule({
+    ...rule,
+    values,
+    valueAliases: aliases,
+    value: rule.value === input.value ? values[0]! : rule.value,
+  });
+  Object.assign(rule, next);
+  return config;
+}
+/** Edit one field on the latest candidate without replacing the whole rule. */
+export function editRuleValue(
+  config: Config,
+  input: {
+    id: string;
+    environmentId: string;
+    value: string;
+    field: "value" | "alias";
+    text: string;
+    previousAlias: string;
+  },
+): Config {
+  if (!input || input.environmentId !== config.activeEnvironmentId)
+    throw new Error("环境已切换，请刷新后重试");
+  if (
+    !["value", "alias"].includes(input.field) ||
+    typeof input.text !== "string"
+  )
+    throw new Error("编辑内容无效");
+  const rule = activeRules(config).find((r) => r.id === input.id);
+  if (!rule || rule.kind !== "header")
+    throw new Error("规则已变化，请刷新后重试");
+  const values = [...(rule.values || [rule.value])];
+  const index = values.indexOf(input.value);
+  if (index < 0) throw new Error("候选值已变化，请刷新后重试");
+  const aliases = [...(rule.valueAliases || values.map(() => ""))];
+  if (input.field === "alias" && aliases[index] !== input.previousAlias)
+    throw new Error("别名已变化，请刷新后重试");
+  if (input.field === "value") values[index] = input.text;
+  else aliases[index] = input.text;
+  const next = validateRule({
+    ...rule,
+    values,
+    valueAliases: aliases,
+    value:
+      input.field === "value" && rule.value === input.value
+        ? input.text
+        : rule.value,
+  });
+  Object.assign(rule, next);
+  return config;
+}
 export function validateConfig(config: Config): Config {
   if (
     !config ||

@@ -171,7 +171,7 @@ try {
     const measure = () =>
       evaluate(
         popup,
-        `({innerWidth,innerHeight,htmlWidth:document.documentElement.getBoundingClientRect().width,bodyWidth:document.body.getBoundingClientRect().width,bodyHeight:document.body.getBoundingClientRect().height,scrollWidth:document.documentElement.scrollWidth,footerBottom:document.querySelector('.app-footer').getBoundingClientRect().bottom, title:document.title})`,
+        `({innerWidth,innerHeight,htmlWidth:document.documentElement.getBoundingClientRect().width,bodyWidth:document.body.getBoundingClientRect().width,bodyHeight:document.body.getBoundingClientRect().height,scrollWidth:document.documentElement.scrollWidth,contentBottom:document.querySelector('.main-view').getBoundingClientRect().bottom, title:document.title})`,
       );
     let previous = "",
       stableSince = 0;
@@ -218,13 +218,13 @@ try {
       "native popup height must fit available window",
     );
     assert.ok(
-      initial.footerBottom <= initial.innerHeight + 0.5,
-      "footer remains inside popup",
+      initial.contentBottom <= initial.innerHeight + 0.5,
+      "main content remains inside popup",
     );
     assert.ok(
       await evaluate(
         popup,
-        `document.querySelector('.empty-state p').getBoundingClientRect().bottom <= document.querySelector('.app-footer').getBoundingClientRect().top && document.querySelector('.rule-list').scrollHeight <= document.querySelector('.rule-list').clientHeight + 1`,
+        `document.querySelector('.empty-state p').getBoundingClientRect().bottom <= innerHeight && document.querySelector('.rule-list').scrollHeight <= document.querySelector('.rule-list').clientHeight + 1`,
       ),
       "empty-state explanation is visible without scrolling in a short popup",
     );
@@ -255,6 +255,14 @@ try {
     await until(
       () => evaluate(popup, '!document.querySelector(".editor")'),
       "close editor",
+    );
+    await evaluate(
+      popup,
+      'document.querySelector(".action-menu-trigger").click()',
+    );
+    await until(
+      () => evaluate(popup, '!!document.querySelector(".action-menu")'),
+      "action menu",
     );
     await evaluate(popup, 'document.querySelector(".import-button").click()');
     await until(
