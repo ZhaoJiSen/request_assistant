@@ -5,3 +5,4 @@ node_modules/
 evidence/
 chrome-extension/
 *.zip
+.oil-diff
