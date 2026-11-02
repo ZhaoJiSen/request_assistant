@@ -1,5 +1,5 @@
 name: 手动打包 ZIP
-run-name: 打包请求助手 ${{ inputs.version }}
+run-name: 打包并发布请求助手 ${{ inputs.version }}
 
 on:
   workflow_dispatch:
@@ -12,11 +12,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
 jobs:
   package:
-    name: 检查并打包 Chrome 插件
+    name: 检查、打包并发布 Chrome 插件
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write
     env:
       VERSION: ${{ inputs.version }}
     steps:
@@ -33,6 +39,16 @@ jobs:
 
       - name: 校验并设置本次构建版本
         run: node scripts/set-package-version.mjs
+
+      - name: 检查版本尚未发布
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          refs=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v$VERSION" --jq '.[].ref')
+          if grep -Fxq "refs/tags/v$VERSION" <<< "$refs"; then
+            echo "::error::标签 v$VERSION 已存在，请使用新的版本号；不会覆盖已发布的包。"
+            exit 1
+          fi
 
       - name: 安装依赖
         run: npm ci
@@ -58,8 +74,22 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: 创建 Release 并附加 ZIP
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_url=$(gh release create "v$VERSION" "request-helper-$VERSION-chrome.zip" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "请求助手 $VERSION" \
+            --notes "下载下方 request-helper-$VERSION-chrome.zip，解压后在 Chrome 扩展管理页加载包含 manifest.json 的文件夹。" \
+            --generate-notes)
+          printf 'url=%s\n' "$release_url" >> "$GITHUB_OUTPUT"
+
       - name: 写入下载说明
         env:
           ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          RELEASE_URL: ${{ steps.release.outputs.url }}
         run: |
-          printf '### 请求助手 %s\n\n[下载 ZIP](%s)\n\n解压后在 Chrome 扩展管理页加载包含 manifest.json 的文件夹。\n' "$VERSION" "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+          printf '### 请求助手 %s\n\n[Release 与 ZIP 下载](%s) · [Actions 备份附件（30 天）](%s)\n\n解压后在 Chrome 扩展管理页加载包含 manifest.json 的文件夹。\n' "$VERSION" "$RELEASE_URL" "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"

@@ -10,7 +10,7 @@
 
 1. 打开仓库的 [Actions → 手动打包 ZIP](https://github.com/ZhaoJiSen/request_assistant/actions/workflows/package.yml)，点击 **Run workflow**。
 2. 选择代码分支，输入版本号（如 `2.2.0`），再次点击 **Run workflow**。
-3. 等待运行成功，在运行页面的 **Artifacts** 下载 `request-helper-2.2.0-chrome.zip`，解压到准备长期保留的目录。
+3. 等待运行成功，在仓库的 [Releases](https://github.com/ZhaoJiSen/request_assistant/releases) 找到对应版本，下载附件 `request-helper-2.2.0-chrome.zip`，解压到准备长期保留的目录。
 4. 打开 `chrome://extensions/`，开启右上角「开发者模式」；点击「加载已解压的扩展程序」，选择包含 **`manifest.json`** 的解压目录。
 5. 在工具栏固定「请求助手」，打开需要调试的网站后点击插件图标。首次替换其他旧版插件时先停用旧版，避免重复修改请求。
 
@@ -20,8 +20,9 @@
 
 - 版本号使用 `X.Y.Z`，每段为 0–65535，不能全部为 0；不带 `v` 或 `-beta` 等后缀。
 - 云端使用 Node.js 24、`npm ci`、类型检查、逻辑测试，再生成正式 Chrome Manifest V3 ZIP；产物版本会与输入再次核对。
-- 版本仅写入本次运行的 package.json / lockfile 和插件 manifest，不自动提交版本修改、创建 tag 或发布 Release。
-- ZIP 直接作为单个文件上传，不额外嵌套一层 ZIP。下载需要登录 GitHub，产物保留 **30 天**；过期后可按同样步骤重新运行。
+- 版本写入本次运行的 package.json / lockfile 和插件 manifest，不自动提交版本修改。验证通过后自动创建 `v<版本号>` 标签和正式 Release，标签指向本次运行的代码提交，并附加 ZIP 与自动生成的发布说明。
+- 已存在的版本标签会使流程提前失败，不覆盖已有发布包；发布新包时请递增版本号。同版本的工作流串行执行。
+- Release 附件作为长期下载入口，不额外嵌套一层 ZIP；Actions 中也保留单文件备份附件 **30 天**，该备份下载需要登录 GitHub。
 - 手动工作流只在点击 Run workflow 时打包；也可按需运行 `npm run build` 在本地生成同样的 Chrome ZIP，不再自动复制安装目录。首次配置需将工作流推送到默认分支 `master`，Actions 页面才显示手动入口。
 
 ## 三种能力
@@ -79,7 +80,7 @@ npm run test:browser    # 隔离 Chrome + 本机测试网站，验证真实请�
 npm run preview        # 仅开发用 UI 预览，使用独立的虚构配置
 ```
 
-本地通过 `npm run dev` 调试，输出在 `.output/chrome-mv3-dev/`；如需浏览器回归，先让开发模式生成该目录。安装 ZIP 可从 GitHub Actions 获取，也可用 `npm run build` 生成，版本取自 package.json。
+本地通过 `npm run dev` 调试，输出在 `.output/chrome-mv3-dev/`；如需浏览器回归，先让开发模式生成该目录。安装 ZIP 可从 GitHub Releases 获取，也可用 `npm run build` 生成，版本取自 package.json。
 
 `test:browser` 默认使用 macOS 的 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`；其他平台通过 `CHROME_PATH` 指定可执行文件。测试创建临时 profile，不使用个人浏览器数据。
 
