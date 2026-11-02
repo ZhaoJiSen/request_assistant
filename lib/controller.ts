@@ -64,7 +64,7 @@ export function createController(api: typeof chrome) {
         await apply(previous);
         await api.storage.local.set({ headerManagerPending: null });
       } catch {
-        syncError = "规则恢复失败，请点击重新同步；当前注入状态未确认";
+        syncError = "规则恢复失败，请点击「重新应用规则」；当前注入状态未确认";
       }
       throw error;
     }
@@ -80,7 +80,7 @@ export function createController(api: typeof chrome) {
           await api.storage.local.set({ headerManagerPending: null });
           syncError = "";
         } catch (e) {
-          syncError = e instanceof Error ? e.message : "同步失败";
+          syncError = e instanceof Error ? e.message : "规则应用失败";
           throw e;
         }
       }),

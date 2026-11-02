@@ -532,7 +532,7 @@ async function refresh() {
       flash("已重新读取网站 Cookie");
     } else {
       state.value = await request("SYNC");
-      flash("规则已重新同步");
+      flash("规则已重新应用");
     }
   });
 }
@@ -659,7 +659,7 @@ onUnmounted(() => {
           ><span
             class="status-dot"
             :class="{ muted: !matchedCount || state.syncError }"
-          />{{ state.syncError ? "同步异常" : `${matchedCount} 条匹配` }}</span
+          />{{ state.syncError ? "规则应用异常" : `${matchedCount} 条匹配` }}</span
         >
       </section>
       <nav class="tab-bar" role="tablist" aria-label="配置类型">
@@ -1036,7 +1036,7 @@ onUnmounted(() => {
             :class="{ muted: !state.config.enabled || !!state.syncError }"
           />{{
             state.syncError
-              ? "同步异常"
+              ? "规则应用异常"
               : state.config.enabled
                 ? `${enabledCount} 条注入规则已加载`
                 : "请求注入已暂停"
@@ -1046,7 +1046,7 @@ onUnmounted(() => {
           :disabled="busy || loading"
           @click="refresh"
         >
-          <RefreshCw :size="13" />{{ tab === "site" ? "重新读取" : "重新同步" }}
+          <RefreshCw :size="13" />{{ tab === "site" ? "重新读取" : "重新应用规则" }}
         </button>
       </footer>
     </div>
