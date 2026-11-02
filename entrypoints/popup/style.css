@@ -765,7 +765,8 @@ button:disabled svg {
 }
 .field > input,
 .field > textarea,
-.value-draft textarea {
+.value-draft textarea,
+.value-draft input:not([type="radio"]) {
   border: 1px solid #dce3df;
   padding: 10px 11px;
   border-radius: 7px;
@@ -1536,4 +1537,140 @@ button:disabled svg {
   .header-values .value-draft {
     transition: none;
   }
+}
+
+/* Search and add stay visible while Header choices scroll. */
+.select-popover {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.select-options {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.select-menu-footer,
+.select-search {
+  flex-shrink: 0;
+}
+.select-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px 10px;
+  margin: 3px 2px 4px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+.select-search input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  color: #20282d;
+}
+.select-search:focus-within {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+.select-search input::placeholder {
+  color: #7a8780;
+}
+.select-option-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+.select-option-label,
+.select-option-description {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.select-option-description {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.select-empty {
+  padding: 17px 10px;
+  text-align: center;
+  color: var(--muted);
+}
+.select-add {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: 5px;
+  color: var(--accent);
+  font-size: 13px;
+  text-align: left;
+}
+.select-add:hover:not(:disabled),
+.select-add:focus-visible {
+  background: #eef6f3;
+}
+.select-add:disabled {
+  color: var(--muted);
+}
+.rule-value-picker .select-value {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+.select-value > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.select-value-description {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 400;
+}
+.rule-value-picker
+  .select-value:has(.select-value-description)
+  > span:first-child {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-weight: 550;
+}
+.field .value-alias-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  margin-bottom: 5px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.value-alias-input {
+  width: 100%;
+}
+.quick-value-context {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 13px 15px;
+  margin-bottom: 22px;
+  background: #f5f8f7;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.quick-value-context > span {
+  font-size: 13px;
+  color: var(--muted);
+}
+.quick-value-context strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+  overflow-wrap: anywhere;
 }

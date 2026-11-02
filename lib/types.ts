@@ -7,6 +7,8 @@ export interface Rule {
   value: string;
   /** Optional Header choices; value is the currently selected choice. */
   values?: string[];
+  /** Optional aliases aligned with values (or [value] for a single value). */
+  valueAliases?: string[];
   enabled: boolean;
   scope: "global" | "domain" | "regex";
   pattern: string;

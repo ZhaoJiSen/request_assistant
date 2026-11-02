@@ -58,6 +58,21 @@ export function validateRule(input: Rule): Rule {
       throw new Error("当前值必须是候选值之一");
     rule.values = [...rule.values];
   }
+  if (rule.valueAliases !== undefined) {
+    if (
+      rule.kind !== "header" ||
+      !Array.isArray(rule.valueAliases) ||
+      rule.valueAliases.length !== (rule.values || [rule.value]).length ||
+      rule.valueAliases.some(
+        (alias) =>
+          typeof alias !== "string" ||
+          alias.length > 48 ||
+          /[\r\n\0]/.test(alias),
+      )
+    )
+      throw new Error("每个候选值的别名需为 48 字符以内的单行文本");
+    rule.valueAliases = rule.valueAliases.map((alias) => alias.trim());
+  }
   if (rule.kind === "header") rule.operation = "set";
   else {
     if (!["set", "append"].includes(rule.operation))
@@ -97,9 +112,33 @@ export function selectRuleValue(
   if (!input || input.environmentId !== config.activeEnvironmentId)
     throw new Error("环境已切换，请刷新后重试");
   const rule = activeRules(config).find((r) => r.id === input.id);
-  if (!rule || rule.kind !== "header" || !rule.values?.includes(input.value))
+  if (
+    !rule ||
+    rule.kind !== "header" ||
+    !(rule.values || [rule.value]).includes(input.value)
+  )
     throw new Error("候选值已变化，请刷新后重试");
   rule.value = input.value;
+  return config;
+}
+/** Append to the latest candidate set without overwriting concurrent rule edits. */
+export function addRuleValue(
+  config: Config,
+  input: { id: string; environmentId: string; value: string; alias: string },
+): Config {
+  if (!input || input.environmentId !== config.activeEnvironmentId)
+    throw new Error("环境已切换，请刷新后重试");
+  const rule = activeRules(config).find((r) => r.id === input.id);
+  if (!rule || rule.kind !== "header")
+    throw new Error("规则已变化，请返回列表后重试");
+  const values = rule.values || [rule.value];
+  const next = validateRule({
+    ...rule,
+    value: input.value,
+    values: [...values, input.value],
+    valueAliases: [...(rule.valueAliases || values.map(() => "")), input.alias],
+  });
+  Object.assign(rule, next);
   return config;
 }
 export function validateConfig(config: Config): Config {

@@ -6,7 +6,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const evidence = resolve(root, "evidence/header-values/browser");
+const evidence = resolve(root, "evidence/header-value-aliases/browser");
 await mkdir(evidence, { recursive: true });
 const chromePath =
   process.env.CHROME_PATH ||
@@ -208,8 +208,31 @@ try {
     );
   }
   async function key(value) {
-    await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: value }, popup);
-    await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: value }, popup);
+    const keyCode = {
+      Enter: 13,
+      Tab: 9,
+      Escape: 27,
+      ArrowUp: 38,
+      ArrowDown: 40,
+      Home: 36,
+      End: 35,
+    }[value];
+    await cdp(
+      "Input.dispatchKeyEvent",
+      {
+        type: "keyDown",
+        key: value,
+        code: value,
+        windowsVirtualKeyCode: keyCode,
+        ...(value === "Enter" ? { text: "\r" } : {}),
+      },
+      popup,
+    );
+    await cdp(
+      "Input.dispatchKeyEvent",
+      { type: "keyUp", key: value, windowsVirtualKeyCode: keyCode },
+      popup,
+    );
   }
   async function idle() {
     await until(
@@ -304,11 +327,31 @@ try {
   );
 
   await menu(".rule-value-picker button");
-  await key("End");
+  await key("ArrowUp");
   await key("Enter");
   await idle();
   assert.equal((await echo())["pversion-id"], "900");
   passed("custom value picker supports keyboard selection");
+
+  await menu(".rule-value-picker button");
+  await key("ArrowDown");
+  await until(
+    () => evaluate(popup, '!document.querySelector(".toast")'),
+    "selection toast finished",
+  );
+  assert.match(
+    await evaluate(
+      popup,
+      "document.querySelector('.select-option.active').textContent",
+    ),
+    /898/,
+  );
+  await key("Enter");
+  await idle();
+  assert.equal((await echo())["pversion-id"], "898");
+  passed(
+    "toast updates do not reset the active keyboard option while a menu is open",
+  );
 
   await click(".row-toggle");
   await idle();
@@ -379,11 +422,13 @@ try {
   await saveEditor();
   assert.equal(
     await evaluate(popup, "!!document.querySelector('.rule-value-picker')"),
-    false,
+    true,
   );
   assert.equal((await message("STATE")).config.rules[0].values, undefined);
   assert.equal((await echo())["pversion-id"], "899");
-  passed("one remaining value restores the compact single-value layout");
+  passed(
+    "one remaining value keeps quick-add accessible in the single-value picker",
+  );
 
   await message("SAVE_RULE", {
     ...(await message("STATE")).config.rules[0],
@@ -409,12 +454,163 @@ try {
     "stale candidate selection cannot overwrite a concurrently edited rule",
   );
 
+  await reloadPopup();
+  await menu(".rule-value-picker button");
+  await click(".select-add");
+  await until(
+    () => evaluate(popup, '!!document.querySelector("#quick-value")'),
+    "quick add editor",
+  );
+  await fill("#quick-value", "831");
+  await fill("#quick-alias", "生产");
+  await snapshot("quick-add");
+  await saveEditor();
+  assert.equal((await echo())["pversion-id"], "831");
+  assert.equal(
+    await evaluate(
+      popup,
+      "document.activeElement.classList.contains('select-trigger')",
+    ),
+    true,
+  );
+  assert.deepEqual((await message("STATE")).config.rules[0].valueAliases, [
+    "",
+    "",
+    "生产",
+  ]);
+  await reloadPopup();
+  assert.equal(
+    await evaluate(
+      popup,
+      "document.querySelector('.rule-value-picker .select-value').textContent",
+    ),
+    "生产831",
+  );
+  passed(
+    "footer quick-add persists alias and immediately applies the new Header value",
+  );
+
+  await click('.row-actions button[title="编辑规则"]');
+  await until(
+    () => evaluate(popup, '!!document.querySelector("#rule-key")'),
+    "alias editor",
+  );
+  await fill("#rule-alias-0", "测试环境");
+  await fill("#rule-alias-1", "预发布");
+  await snapshot("aliases-editor");
+  await saveEditor();
+  await menu(".rule-value-picker button");
+  await snapshot("aliases-menu");
+  await fill(".select-search input", "预发");
+  assert.equal(
+    await evaluate(popup, "document.querySelectorAll('.select-option').length"),
+    1,
+  );
+  await key("Enter");
+  await idle();
+  assert.equal((await echo())["pversion-id"], "899");
+  await menu(".rule-value-picker button");
+  await fill(".select-search input", "98");
+  assert.equal(
+    await evaluate(popup, "document.querySelectorAll('.select-option').length"),
+    1,
+  );
+  assert.match(
+    await evaluate(
+      popup,
+      "document.querySelector('.select-option').textContent",
+    ),
+    /测试环境/,
+  );
+  await key("Escape");
+  assert.equal((await echo())["pversion-id"], "899");
+  passed(
+    "aliases show alongside raw values; search matches alias or value and Escape keeps selection",
+  );
+
+  await menu(".rule-value-picker button");
+  await fill(".select-search input", "没有这个环境");
+  assert.equal(
+    await evaluate(popup, "document.querySelectorAll('.select-option').length"),
+    0,
+  );
+  await snapshot("search-empty");
+  await key("Tab");
+  assert.equal(
+    await evaluate(
+      popup,
+      "document.activeElement.classList.contains('select-add')",
+    ),
+    true,
+  );
+  await key("Enter");
+  await until(
+    () => evaluate(popup, '!!document.querySelector("#quick-value")'),
+    "keyboard quick add",
+  );
+  await fill("#quick-value", "831");
+  await fill("#quick-alias", "重复环境");
+  await click('button[form="config-form"]');
+  await until(
+    () =>
+      evaluate(
+        popup,
+        'document.querySelector(".editor-error")?.textContent.includes("重复")',
+      ),
+    "duplicate quick-add rejected",
+  );
+  assert.equal(
+    await evaluate(popup, "document.querySelector('#quick-alias').value"),
+    "重复环境",
+  );
+  assert.equal((await echo())["pversion-id"], "899");
+  await fill("#quick-value", "833");
+  await fill("#quick-alias", "联调");
+  await saveEditor();
+  assert.equal((await echo())["pversion-id"], "833");
+  passed(
+    "no-results menu retains keyboard add action; invalid save preserves inputs and previous network value",
+  );
+
+  await fill(".search-field input", "联调");
+  assert.equal(
+    await evaluate(popup, "document.querySelectorAll('.rule-row').length"),
+    1,
+  );
+  await fill(".search-field input", "");
+  await menu(".rule-value-picker button");
+  await click(".select-add");
+  await until(
+    () => evaluate(popup, '!!document.querySelector("#quick-value")'),
+    "concurrent editor",
+  );
+  await fill("#quick-value", "835");
+  await fill("#quick-alias", "新环境");
+  await message("ADD_RULE_VALUE", {
+    id,
+    environmentId: "default",
+    value: "834",
+    alias: "并发新增",
+  });
+  await saveEditor();
+  state = await message("STATE");
+  assert.deepEqual(state.config.rules[0].values.slice(-2), ["834", "835"]);
+  assert.deepEqual(state.config.rules[0].valueAliases.slice(-2), [
+    "并发新增",
+    "新环境",
+  ]);
+  assert.equal((await echo())["pversion-id"], "835");
+  passed(
+    "main search includes aliases; quick-add merges with candidates added concurrently",
+  );
+
   await message("SAVE_RULE", {
     ...fresh,
     id: "",
     key: "Authorization",
     value: "Bearer sensitive-one",
     values: ["Bearer sensitive-one", "Bearer sensitive-two"],
+    valueAliases: ["测试凭据", "生产凭据"],
   });
   await reloadPopup();
   await evaluate(
@@ -432,10 +628,45 @@ try {
     ),
     false,
   );
+  assert.match(
+    await evaluate(
+      popup,
+      "document.querySelector('.select-popover').textContent",
+    ),
+    /生产凭据/,
+  );
   await snapshot("sensitive");
   await key("Escape");
   passed(
     "sensitive Header candidates remain masked in the trigger and open menu",
+  );
+
+  const current = (await message("STATE")).config.rules.find(
+    (r) => r.id === id,
+  );
+  await message("SAVE_RULE", {
+    ...current,
+    value: "0",
+    values: Array.from({ length: 30 }, (_, i) => String(i)),
+    valueAliases: Array.from({ length: 30 }, (_, i) => `环境 ${i + 1}`),
+  });
+  await reloadPopup();
+  await menu(".rule-value-picker button");
+  assert.equal(
+    await evaluate(popup, "document.querySelector('.select-add').disabled"),
+    true,
+  );
+  assert.equal(
+    await evaluate(
+      popup,
+      "document.querySelector('.select-options').scrollHeight > document.querySelector('.select-options').clientHeight",
+    ),
+    true,
+  );
+  await snapshot("long-menu");
+  await key("Escape");
+  passed(
+    "30-value limit disables add while choices scroll independently from search and footer",
   );
 
   await cdp(
@@ -446,6 +677,11 @@ try {
   await menu(".rule-value-picker button");
   await snapshot("short-menu");
   await key("Escape");
+  await cdp("Emulation.setPageScaleFactor", { pageScaleFactor: 2 }, popup);
+  await menu(".rule-value-picker button");
+  await snapshot("menu-200-percent");
+  await key("Escape");
+  await cdp("Emulation.setPageScaleFactor", { pageScaleFactor: 1 }, popup);
   await click('.row-actions button[title="编辑规则"]');
   await until(
     () => evaluate(popup, '!!document.querySelector("#rule-key")'),

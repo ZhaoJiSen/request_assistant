@@ -182,3 +182,119 @@ test("choices round-trip through export/import and paused or disabled rules stay
   assert.equal(compileRules(paused).length, 0);
   assert.equal(validateConfig(paused).rules[0]!.value, "898");
 });
+
+test("aliases validate, follow candidates through selection, copy and import/export", () => {
+  const current = rule({
+    value: "898",
+    values: ["898", "231"],
+    valueAliases: [" 测试环境 ", "预发布"],
+  });
+  const valid = validateRule(current);
+  assert.deepEqual(valid.valueAliases, ["测试环境", "预发布"]);
+  assert.deepEqual(current.valueAliases, [" 测试环境 ", "预发布"]);
+  const config = { ...emptyConfig(), rules: [valid] };
+  selectRuleValue(config, {
+    id: valid.id,
+    environmentId: "default",
+    value: "231",
+  });
+  assert.deepEqual(config.rules[0]!.valueAliases, ["测试环境", "预发布"]);
+  assert.equal(
+    compileRules(config)[0]!.action.requestHeaders![0]!.value,
+    "231",
+  );
+  const parsed = parseRules(exportRules(config, "header"), {
+    target: "header",
+    conflict: "skip",
+    scope: "global",
+    pattern: "",
+    operation: "set",
+  });
+  assert.deepEqual(parsed[0]!.valueAliases, ["测试环境", "预发布"]);
+  const copy = updateEnvironment(structuredClone(config), {
+    action: "duplicate",
+    id: "default",
+    name: "复制",
+  });
+  assert.deepEqual(copy.rules.at(-1)!.valueAliases, valid.valueAliases);
+  assert.deepEqual(
+    validateRule(rule({ valueAliases: ["生产"] })).valueAliases,
+    ["生产"],
+  );
+  for (const valueAliases of [
+    ["too", "many"],
+    ["x".repeat(49)],
+    ["bad\nline"],
+    [null],
+  ] as unknown as string[][]) {
+    assert.throws(() => validateRule(rule({ valueAliases })), /别名/);
+  }
+});
+
+test("quick add merges with latest rule, preserves flags and rejects duplicates, limits and stale context", async () => {
+  const { addRuleValue } = await import("../lib/rules");
+  const config = {
+    ...emptyConfig(),
+    rules: [
+      rule({
+        value: "898",
+        values: ["898", "231"],
+        valueAliases: ["测试", "预发布"],
+        enabled: false,
+      }),
+    ],
+  };
+  const input = {
+    id: "legacy-rule",
+    environmentId: "default",
+    value: "831",
+    alias: "生产",
+  };
+  config.rules[0]!.pattern = "example.test";
+  config.rules[0]!.scope = "domain";
+  addRuleValue(config, input);
+  assert.deepEqual(config.rules[0]!.values, ["898", "231", "831"]);
+  assert.deepEqual(config.rules[0]!.valueAliases, ["测试", "预发布", "生产"]);
+  assert.equal(config.rules[0]!.pattern, "example.test");
+  assert.equal(config.rules[0]!.enabled, false);
+  assert.equal(config.rules[0]!.value, "831");
+  const snapshot = structuredClone(config);
+  for (const invalid of [
+    input,
+    { ...input, environmentId: "gone", value: "832" },
+    { ...input, id: "gone", value: "832" },
+    { ...input, value: "bad\n" },
+    { ...input, value: "832", alias: "x".repeat(49) },
+  ]) {
+    assert.throws(() => addRuleValue(config, invalid));
+    assert.deepEqual(config, snapshot);
+  }
+  const many = {
+    ...emptyConfig(),
+    rules: [
+      rule({
+        value: "0",
+        values: Array.from({ length: 30 }, (_, i) => String(i)),
+      }),
+    ],
+  };
+  assert.throws(() => addRuleValue(many, { ...input, value: "30" }), /1–30/);
+  const f = fixture({ ...emptyConfig(), rules: [rule({ value: "898" })] });
+  await f.controller.sync();
+  for (const failure of ["dnr", "storage"] as const) {
+    f.fail(failure);
+    await assert.rejects(
+      f.controller.mutate((c) => addRuleValue(c, input)),
+      /failed/,
+    );
+    assert.equal((await f.controller.read()).rules[0]!.value, "898");
+    assert.equal((await f.controller.read()).rules[0]!.values, undefined);
+    assert.equal(f.installed()[0]!.action.requestHeaders![0]!.value, "898");
+  }
+  await f.controller.mutate((c) => addRuleValue(c, input));
+  const restarted = fixture(f.store[CONFIG_KEY]);
+  assert.deepEqual((await restarted.controller.read()).rules[0]!.valueAliases, [
+    "",
+    "生产",
+  ]);
+});

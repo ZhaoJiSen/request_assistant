@@ -66,7 +66,9 @@ const query = ref("");
 const scopeFilter = ref("all");
 const revealed = reactive(new Set<string>());
 const confirmDelete = ref("");
-const editor = ref<"rule" | "site" | "environments" | "transfer" | null>(null);
+const editor = ref<
+  "rule" | "value" | "site" | "environments" | "transfer" | null
+>(null);
 const editorError = ref("");
 const transferMode = ref<"import" | "export">("import");
 const transferTarget = ref<TransferTarget>("header");
@@ -82,10 +84,19 @@ const form = reactive<Rule>({
   operation: "set",
 });
 const valueDrafts = ref<string[]>([""]);
+const aliasDrafts = ref<string[]>([""]);
+const quickValue = reactive({
+  id: "",
+  environmentId: "",
+  key: "",
+  value: "",
+  alias: "",
+});
 const selectedValueIndex = ref(0);
 async function addValue() {
   if (busy.value || valueDrafts.value.length >= 30) return;
   valueDrafts.value.push("");
+  aliasDrafts.value.push("");
   await nextTick();
   const input = document.getElementById(
     `rule-value-${valueDrafts.value.length - 1}`,
@@ -96,17 +107,42 @@ async function addValue() {
 function removeValue(index: number) {
   if (valueDrafts.value.length === 1) return;
   valueDrafts.value.splice(index, 1);
+  aliasDrafts.value.splice(index, 1);
   if (selectedValueIndex.value === index) selectedValueIndex.value = 0;
   else if (selectedValueIndex.value > index) selectedValueIndex.value--;
 }
 function valueOptions(rule: Rule) {
-  return (rule.values || [rule.value]).map((value, index) => ({
-    value,
-    label:
+  return (rule.values || [rule.value]).map((value, index) => {
+    const alias = rule.valueAliases?.[index] || "";
+    const display =
       isSensitive(rule) && !revealed.has(rule.id)
-        ? `候选值 ${index + 1} · ••••••••`
-        : value || "（空值）",
-  }));
+        ? "••••••••"
+        : value || "（空值）";
+    return {
+      value,
+      label:
+        alias ||
+        (isSensitive(rule) && !revealed.has(rule.id)
+          ? `候选值 ${index + 1}`
+          : display),
+      description:
+        alias || (isSensitive(rule) && !revealed.has(rule.id))
+          ? display
+          : undefined,
+    };
+  });
+}
+function openQuickValue(rule: Rule) {
+  Object.assign(quickValue, {
+    id: rule.id,
+    environmentId: state.value.config.activeEnvironmentId,
+    key: rule.key,
+    value: "",
+    alias: "",
+  });
+  editor.value = "value";
+  editorError.value = "";
+  void focusEditor();
 }
 const cookieForm = reactive<CookieInput>({
   name: "",
@@ -156,7 +192,7 @@ const filteredRules = computed(() =>
     (r) =>
       (scopeFilter.value !== "current" ||
         (context.value && matchesRule(r, context.value.url))) &&
-      `${r.key} ${r.value} ${(r.values || []).join(" ")} ${r.pattern}`
+      `${r.key} ${r.value} ${(r.values || []).join(" ")} ${(r.valueAliases || []).join(" ")} ${r.pattern}`
         .toLowerCase()
         .includes(query.value.toLowerCase()),
   ),
@@ -337,7 +373,11 @@ function openRule(rule?: Rule) {
   );
   // Reset optional fields as Object.assign does not remove fields from the previous editor.
   form.values = rule?.values ? [...rule.values] : undefined;
+  form.valueAliases = rule?.valueAliases ? [...rule.valueAliases] : undefined;
   valueDrafts.value = rule?.values ? [...rule.values] : [rule?.value ?? ""];
+  aliasDrafts.value = valueDrafts.value.map(
+    (_, index) => rule?.valueAliases?.[index] || "",
+  );
   selectedValueIndex.value = Math.max(
     0,
     valueDrafts.value.indexOf(rule?.value ?? ""),
@@ -385,19 +425,32 @@ function closeEditor() {
   }
 }
 async function save() {
+  const valueReturnFocus =
+    editor.value === "value" ? editorReturnFocus.value : null;
   await run(async () => {
-    if (editor.value === "rule") {
+    if (editor.value === "value") {
+      state.value = await request<State>("ADD_RULE_VALUE", { ...quickValue });
+      flash(
+        state.value.config.enabled &&
+          state.value.config.rules.find((r) => r.id === quickValue.id)?.enabled
+          ? `${quickValue.key} 已添加并切换到新值`
+          : "候选值已添加，当前未开启注入",
+      );
+    } else if (editor.value === "rule") {
       const value = validateRule({
         ...form,
         ...(form.kind === "header"
           ? {
               value: valueDrafts.value[selectedValueIndex.value] ?? "",
+              valueAliases: aliasDrafts.value.some((alias) => alias.trim())
+                ? [...aliasDrafts.value]
+                : undefined,
               values:
                 valueDrafts.value.length > 1
                   ? [...valueDrafts.value]
                   : undefined,
             }
-          : { values: undefined }),
+          : { values: undefined, valueAliases: undefined }),
       });
       state.value = await request<State>("SAVE_RULE", value);
       flash(
@@ -420,6 +473,11 @@ async function save() {
     }
     editor.value = null;
   }, true);
+  if (!editor.value && valueReturnFocus)
+    await nextTick(() => {
+      if (valueReturnFocus.isConnected)
+        valueReturnFocus.focus({ preventScroll: true });
+    });
 }
 async function toggleAll() {
   await run(async () => {
@@ -782,28 +840,24 @@ onUnmounted(() => {
                     >{{ rule.operation === "set" ? "替换整段" : "追加" }}</span
                   ></span
                 >
-                <span
-                  v-if="!rule.values || rule.values.length < 2"
-                  class="rule-value"
-                  >{{
-                    isSensitive(rule) && !revealed.has(rule.id)
-                      ? "••••••••••••••••••••"
-                      : rule.value || "（空值）"
-                  }}</span
-                >
+                <span v-if="rule.kind !== 'header'" class="rule-value">{{
+                  isSensitive(rule) && !revealed.has(rule.id)
+                    ? "••••••••••••••••••••"
+                    : rule.value || "（空值）"
+                }}</span>
               </button>
               <UiSelect
-                v-if="
-                  rule.kind === 'header' &&
-                  rule.values &&
-                  rule.values.length > 1
-                "
+                v-if="rule.kind === 'header'"
                 class="rule-value-picker"
+                searchable
+                add-label="添加值"
+                :add-disabled="(rule.values?.length || 1) >= 30"
                 :model-value="rule.value"
                 :options="valueOptions(rule)"
                 :label="`切换 ${rule.key} 的值`"
                 :disabled="busy"
                 @update:model-value="changeRuleValue(rule, $event)"
+                @add="openQuickValue(rule)"
               />
               <span class="rule-scope"
                 ><Globe2 :size="12" /><span :title="scopeName(rule)">{{
@@ -1024,9 +1078,11 @@ onUnmounted(() => {
                 ? `${transferMode === "import" ? "批量导入" : "导出"}${transferTarget === "header" ? " Header" : transferTarget === "cookie" ? "请求 Cookie" : "网站 Cookie"}`
                 : editor === "environments"
                   ? "管理环境"
-                  : editor === "rule"
-                    ? `${form.id ? "编辑" : "添加"}${form.kind === "header" ? " Header" : "请求 Cookie"}`
-                    : `${cookieForm.original ? "编辑" : "写入"}网站 Cookie`
+                  : editor === "value"
+                    ? "添加候选值"
+                    : editor === "rule"
+                      ? `${form.id ? "编辑" : "添加"}${form.kind === "header" ? " Header" : "请求 Cookie"}`
+                      : `${cookieForm.original ? "编辑" : "写入"}网站 Cookie`
             }}
           </h2>
           <button
@@ -1062,7 +1118,38 @@ onUnmounted(() => {
           class="editor-body"
           @submit.prevent="save"
         >
-          <template v-if="editor === 'rule'">
+          <template v-if="editor === 'value'">
+            <div class="quick-value-context">
+              <span>Header</span><strong>{{ quickValue.key }}</strong>
+            </div>
+            <div class="field">
+              <label for="quick-value"
+                >Header 值<span class="optional">允许空值</span></label
+              >
+              <textarea
+                id="quick-value"
+                v-model="quickValue.value"
+                :disabled="busy"
+                rows="3"
+                placeholder="输入需要注入的值"
+                spellcheck="false"
+              />
+            </div>
+            <div class="field">
+              <label for="quick-alias"
+                >别名<span class="optional">选填</span></label
+              >
+              <input
+                id="quick-alias"
+                v-model="quickValue.alias"
+                :disabled="busy"
+                maxlength="48"
+                placeholder="如：测试环境、预发布、生产"
+                autocomplete="off"
+              />
+            </div>
+          </template>
+          <template v-else-if="editor === 'rule'">
             <div class="field">
               <label for="rule-key">{{
                 form.kind === "header" ? "Header 名称" : "请求头名称"
@@ -1128,6 +1215,19 @@ onUnmounted(() => {
                   placeholder="输入需要注入的值"
                   spellcheck="false"
                   :disabled="busy"
+                />
+                <label class="value-alias-label" :for="`rule-alias-${index}`"
+                  >别名<span class="optional">选填</span></label
+                >
+                <input
+                  :id="`rule-alias-${index}`"
+                  v-model="aliasDrafts[index]"
+                  class="value-alias-input"
+                  :aria-label="`候选值 ${index + 1} 的别名`"
+                  :disabled="busy"
+                  maxlength="48"
+                  placeholder="如：测试环境、预发布、生产"
+                  autocomplete="off"
                 />
               </div>
               <button
@@ -1354,7 +1454,13 @@ onUnmounted(() => {
               v-else
               :size="16"
             />{{
-              busy ? "正在保存" : editor === "site" ? "写入 Cookie" : "保存规则"
+              busy
+                ? "正在保存"
+                : editor === "value"
+                  ? "添加并使用"
+                  : editor === "site"
+                    ? "写入 Cookie"
+                    : "保存规则"
             }}
           </button>
         </footer>

@@ -3,7 +3,7 @@ import { importCookies } from "../lib/cookie-transfer";
 import { importRules, type ImportRequest } from "../lib/transfer";
 import { createController } from "../lib/controller";
 import { updateEnvironment } from "../lib/environments";
-import { selectRuleValue } from "../lib/rules";
+import { addRuleValue, selectRuleValue } from "../lib/rules";
 import {
   currentContext,
   listCookies,
@@ -59,6 +59,14 @@ export default defineBackground(() => {
       }
       case "SAVE_RULE":
         await controller.saveRule(message.payload as Rule);
+        return state();
+      case "ADD_RULE_VALUE":
+        await controller.mutate((config) =>
+          addRuleValue(
+            config,
+            message.payload as Parameters<typeof addRuleValue>[1],
+          ),
+        );
         return state();
       case "SELECT_RULE_VALUE":
         await controller.mutate((c) =>

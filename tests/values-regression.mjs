@@ -1,12 +1,12 @@
 import { spawn } from "node:child_process";
 import { mkdir, writeFile, appendFile } from "node:fs/promises";
 const root = new URL("..", import.meta.url);
-const output = new URL("../evidence/header-values/", import.meta.url);
+const output = new URL("../evidence/header-value-aliases/", import.meta.url);
 await mkdir(output, { recursive: true });
 const log = new URL("verification-runs.log", output);
 await writeFile(
   log,
-  `Header choices verification ${new Date().toISOString()}\n`,
+  `Header choices, aliases and searchable picker verification ${new Date().toISOString()}\n`,
 );
 const commands = [
   [
