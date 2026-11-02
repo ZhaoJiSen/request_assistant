@@ -135,22 +135,20 @@ button:disabled svg {
 .brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
 }
 .brand-symbol {
   display: grid;
   place-items: center;
-  width: 29px;
-  height: 29px;
-  background: var(--accent);
-  color: #fff;
-  border-radius: 9px;
+  width: 20px;
+  height: 20px;
+  color: var(--accent);
 }
 .brand h1 {
-  font-size: 16px;
-  letter-spacing: -0.4px;
-  font-weight: 650;
-  color: #20282d;
+  font-size: 14px;
+  letter-spacing: 0;
+  font-weight: 550;
+  color: #40514c;
   white-space: nowrap;
 }
 .master-control {
@@ -1199,7 +1197,7 @@ button:disabled svg {
     padding-right: 16px;
   }
   html[data-surface="preview"] .brand h1 {
-    font-size: 16px;
+    font-size: 14px;
   }
   html[data-surface="preview"] .master-control {
     gap: 6px;

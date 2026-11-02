@@ -596,7 +596,7 @@ onUnmounted(() => {
       <header class="app-header">
         <div class="brand">
           <span class="brand-symbol"
-            ><Settings2 :size="21" :stroke-width="1.7"
+            ><Settings2 :size="18" :stroke-width="1.6"
           /></span>
           <h1>请求助手</h1>
         </div>
