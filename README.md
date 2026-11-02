@@ -72,7 +72,7 @@ npm run dev
 
 ```sh
 npm run typecheck       # TypeScript / Vue 类型检查
-npm run build           # 构建并生成 .output/request-helper-<版本>-chrome.zip
+npm run build           # 构建并在项目根目录生成 request-helper-<版本>-chrome.zip
 npm test               # 规则、事务回滚、并发、Cookie 测试
 npm run test:popup      # 从真实工具栏入口验证弹窗自动尺寸
 npm run test:browser    # 隔离 Chrome + 本机测试网站，验证真实请求

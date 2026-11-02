@@ -1,6 +1,9 @@
 import { defineConfig } from "wxt";
 export default defineConfig({
   modules: ["@wxt-dev/module-vue"],
+  zip: {
+    artifactTemplate: "../{{name}}-{{version}}-{{browser}}.zip",
+  },
   manifest: {
     name: "请求助手",
     minimum_chrome_version: "132",

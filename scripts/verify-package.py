@@ -8,7 +8,7 @@ from zipfile import ZipFile
 version = os.environ["VERSION"]
 root = Path.cwd()
 output = root / ".output" / "chrome-mv3"
-archive = root / ".output" / f"request-helper-{version}-chrome.zip"
+archive = root / f"request-helper-{version}-chrome.zip"
 
 with ZipFile(archive) as package:
     names = [name for name in package.namelist() if not name.endswith("/")]

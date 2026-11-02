@@ -53,7 +53,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v7
         with:
-          path: .output/request-helper-${{ inputs.version }}-chrome.zip
+          path: request-helper-${{ inputs.version }}-chrome.zip
           archive: false
           if-no-files-found: error
           retention-days: 30
